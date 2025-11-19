@@ -16,6 +16,10 @@ WHERE owner_address IS NULL;
 ALTER TABLE payment_buttons 
 ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
 
+-- 3.1. Agregar columna payment_type para tipo de pago
+ALTER TABLE payment_buttons 
+ADD COLUMN IF NOT EXISTS payment_type TEXT DEFAULT 'fixed';
+
 -- 4. Crear índice para búsquedas por owner
 CREATE INDEX IF NOT EXISTS idx_payment_buttons_owner ON payment_buttons(owner_address);
 

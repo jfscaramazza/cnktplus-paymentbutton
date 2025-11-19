@@ -94,15 +94,14 @@ function App() {
     return saved || 'es'
   })
   const [removeStatus, setRemoveStatus] = useState({ id: null, status: null })
-  const [clearStorageStatus, setClearStorageStatus] = useState(null)
-  const [historyTab, setHistoryTab] = useState('active') // 'active' o 'deleted'
+  const [historyTab, setHistoryTab] = useState('active') // 'active' o 'archived'
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(9) // 9, 18, 27, 54 o custom
   const [customPageSize, setCustomPageSize] = useState('')
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
-  const [deletedButtons, setDeletedButtons] = useState([])
+  const [archivedButtons, setArchivedButtons] = useState([])
   const [totalActiveButtons, setTotalActiveButtons] = useState(0)
-  const [totalDeletedButtons, setTotalDeletedButtons] = useState(0)
+  const [totalArchivedButtons, setTotalArchivedButtons] = useState(0)
 
   // Cargar información del token
   const loadTokenInfo = async (provider, tokenAddress = selectedTokenAddress) => {
@@ -255,6 +254,15 @@ function App() {
         setProvider(provider)
         setAccount(address)
 
+        // Cargar historial de botones activos e inactivos cuando se conecta la wallet
+        if (supabase && !isPaymentLink) {
+          const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
+          // Cargar botones activos
+          await loadHistoryFromSupabase(1, actualPageSize, false)
+          // Cargar botones archivados
+          await loadHistoryFromSupabase(1, actualPageSize, true)
+        }
+
         // Escuchar cambios de red
         window.ethereum.on('chainChanged', async () => {
           const newProvider = new ethers.BrowserProvider(window.ethereum)
@@ -277,6 +285,15 @@ function App() {
             await loadTokenInfo(newProvider, selectedTokenAddress)
             setProvider(newProvider)
             setAccount(address)
+
+            // Cargar historial de botones activos e inactivos cuando cambia la cuenta
+            if (supabase && !isPaymentLink) {
+              const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
+              // Cargar botones activos
+              await loadHistoryFromSupabase(1, actualPageSize, false)
+              // Cargar botones archivados
+              await loadHistoryFromSupabase(1, actualPageSize, true)
+            }
           }
         })
       } catch (error) {
@@ -371,11 +388,16 @@ function App() {
 
       // Verificar que el ID no exista (intentar hasta 10 veces)
       while (attempts < maxAttempts) {
-        const { data: existing } = await supabase
+        const { data: existing, error: checkError } = await supabase
           .from('payment_buttons')
           .select('id')
           .eq('id', shortId)
-          .single()
+          .maybeSingle()
+
+        if (checkError && checkError.code !== 'PGRST116') {
+          // PGRST116 es "no rows returned", que es lo que queremos
+          console.warn('Error verificando ID único:', checkError)
+        }
 
         if (!existing) {
           break // ID único encontrado
@@ -388,22 +410,79 @@ function App() {
         throw new Error('No se pudo generar un ID único después de varios intentos')
       }
 
+      // Preparar datos para Supabase
+      // Asegurar que las direcciones estén en minúsculas para consistencia
+      const recipientLower = buttonData.recipientAddress.toLowerCase()
+
+      // owner_address siempre es recipient_address (el receptor es el dueño del botón)
+      // Si no hay wallet conectada, automáticamente usar recipient_address como owner
+      const ownerAddress = recipientLower // Siempre usar recipient como owner
+
+      const insertData = {
+        id: shortId,
+        recipient_address: recipientLower,
+        owner_address: ownerAddress || recipientLower, // Fallback: siempre usar recipient si owner está vacío
+        amount: String(buttonData.amount), // Asegurar que sea string
+        concept: buttonData.concept || '',
+        button_text: buttonData.buttonText || '',
+        button_color: buttonData.buttonColor.replace('#', ''),
+        token_address: selectedTokenAddress.toLowerCase()
+      }
+
+      // Incluir payment_type solo si está disponible en buttonData
+      // Si la columna no existe en la BD, intentar insertar sin ella
+      if (buttonData.paymentType) {
+        insertData.payment_type = buttonData.paymentType
+      } else {
+        // Intentar agregar con valor por defecto, pero si falla, continuar sin él
+        try {
+          insertData.payment_type = 'fixed'
+        } catch (e) {
+          // Si hay error, no incluir payment_type
+        }
+      }
+
       // Guardar en Supabase (owner_address = recipient_address)
-      const { error } = await supabase
+      const { data: insertedData, error } = await supabase
         .from('payment_buttons')
-        .insert({
-          id: shortId,
-          recipient_address: buttonData.recipientAddress,
-          owner_address: buttonData.recipientAddress, // El dueño es el recipient
-          amount: buttonData.amount,
-          concept: buttonData.concept || '',
-          button_text: buttonData.buttonText,
-          button_color: buttonData.buttonColor.replace('#', ''),
-          token_address: selectedTokenAddress
-        })
+        .insert(insertData)
+        .select()
 
       if (error) {
         console.error('Error guardando en Supabase:', error)
+        console.error('Código de error:', error.code)
+        console.error('Mensaje de error:', error.message)
+        console.error('Detalles del error:', error.details)
+        console.error('Hint del error:', error.hint)
+        console.error('Datos que se intentaron guardar:', insertData)
+
+        // Si el error es por payment_type, intentar sin esa columna
+        if (error.message && error.message.includes('payment_type')) {
+          console.warn('La columna payment_type no existe. Intentando sin ella...')
+          delete insertData.payment_type
+
+          const { data: retryData, error: retryError } = await supabase
+            .from('payment_buttons')
+            .insert(insertData)
+            .select()
+
+          if (retryError) {
+            console.error('Error en segundo intento:', retryError)
+            // Continuar con el flujo de error original
+          } else {
+            // Éxito en el segundo intento
+            console.log('Botón guardado exitosamente sin payment_type')
+            const fullUrl = `${window.location.origin}/${retryData[0].id}`
+            return fullUrl
+          }
+        }
+
+        // Mostrar alerta al usuario (usar el language del componente)
+        const currentLanguage = language || 'es'
+        alert(currentLanguage === 'es'
+          ? `Error al guardar en Supabase: ${error.message || 'Error desconocido'}. Se usará el método alternativo.`
+          : `Error saving to Supabase: ${error.message || 'Unknown error'}. Using alternative method.`)
+
         // Fallback al método antiguo si falla Supabase
         const params = new URLSearchParams({
           recipient: buttonData.recipientAddress,
@@ -414,6 +493,11 @@ function App() {
           token: selectedTokenAddress
         })
         return `${window.location.origin}${window.location.pathname}?payment&${params.toString()}`
+      }
+
+      // Verificar que se insertó correctamente
+      if (!insertedData || insertedData.length === 0) {
+        console.warn('No se recibió confirmación de inserción desde Supabase, pero no hubo error')
       }
 
       // Retornar link corto
@@ -460,7 +544,7 @@ function App() {
           const recipientAddress = data.recipient_address
           const amount = data.amount
           const concept = data.concept || ''
-          const buttonText = data.button_text || 'Pagar'
+          const buttonText = data.button_text || (language === 'es' ? 'Pagar' : 'Pay')
           const buttonColor = `#${data.button_color || '6366f1'}`
           const tokenAddress = data.token_address || selectedTokenAddress
 
@@ -479,6 +563,7 @@ function App() {
               buttonText,
               buttonColor,
               tokenAddress,
+              paymentType: data.payment_type || 'fixed',
               paymentLink: window.location.href
             }
             setButtons([buttonData])
@@ -523,6 +608,7 @@ function App() {
           buttonText,
           buttonColor,
           tokenAddress,
+          paymentType: urlParams.get('paymentType') || 'fixed',
           paymentLink: window.location.href
         }
         setButtons([buttonData])
@@ -543,42 +629,6 @@ function App() {
     }
   }, [provider, isPaymentLink])
 
-  // Guardar botones en localStorage
-  const saveButtonsToStorage = (buttonsToSave) => {
-    try {
-      localStorage.setItem('defipago-buttons', JSON.stringify(buttonsToSave))
-    } catch (error) {
-      console.error('Error guardando botones en localStorage:', error)
-    }
-  }
-
-  // Cargar botones desde localStorage
-  const loadButtonsFromStorage = () => {
-    try {
-      const savedButtons = localStorage.getItem('defipago-buttons')
-      if (savedButtons) {
-        const parsedButtons = JSON.parse(savedButtons)
-        setButtons(parsedButtons)
-      }
-    } catch (error) {
-      console.error('Error cargando botones desde localStorage:', error)
-    }
-  }
-
-  // Borrar memoria
-  const clearStorage = () => {
-    try {
-      if (window.confirm(language === 'es' ? '¿Estás seguro de que deseas borrar todos los botones guardados?' : 'Are you sure you want to clear all saved buttons?')) {
-        localStorage.removeItem('defipago-buttons')
-        setButtons([])
-        setClearStorageStatus('success')
-        setTimeout(() => setClearStorageStatus(null), 2000)
-      }
-    } catch (error) {
-      setClearStorageStatus('fail')
-      setTimeout(() => setClearStorageStatus(null), 2000)
-    }
-  }
 
   // Agregar un nuevo botón de pago
   const addPaymentButton = async (buttonData) => {
@@ -600,16 +650,13 @@ function App() {
       fullButtonData.shortId = linkMatch[1]
     }
 
-    // Si hay wallet conectada, recargar historial desde Supabase
+    // Recargar historial desde Supabase si hay wallet conectada
+    // Los botones siempre se guardan en Supabase, vinculados por recipient_address
     if (account && supabase) {
       const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
-      await loadHistoryFromSupabase(currentPage, actualPageSize, historyTab === 'deleted')
-    } else {
-      // Si no hay wallet, usar localStorage
-      const newButtons = [...buttons, fullButtonData]
-      setButtons(newButtons)
-      saveButtonsToStorage(newButtons)
+      await loadHistoryFromSupabase(currentPage, actualPageSize, historyTab === 'archived')
     }
+    // Si no hay wallet, el botón ya está guardado en Supabase y aparecerá cuando se conecte
   }
 
   // Cargar botón desde URL al montar el componente
@@ -617,40 +664,103 @@ function App() {
     loadButtonFromURL()
   }, [])
 
-  // Eliminar un botón (soft delete en Supabase)
-  const removeButton = async (id, shortId = null) => {
+  // Archivar un botón (soft delete en Supabase)
+  const archiveButton = async (id, shortId = null) => {
     try {
-      // Si tiene shortId, marcar como eliminado en Supabase
+      // Si tiene shortId, marcar como archivado en Supabase
       if (shortId && supabase && account) {
-        const { error } = await supabase
+        const ownerAddress = account.toLowerCase()
+        console.log('Archivando botón:', { shortId, ownerAddress })
+
+        const { data: updateData, error } = await supabase
           .from('payment_buttons')
           .update({ deleted_at: new Date().toISOString() })
           .eq('id', shortId)
-          .eq('owner_address', account.toLowerCase())
+          .ilike('owner_address', ownerAddress) // Case-insensitive
+          .select()
+
+        console.log('Resultado de archivar:', { updateData, error })
 
         if (error) {
-          console.error('Error marcando como eliminado en Supabase:', error)
+          console.error('Error archivando en Supabase:', error)
+          console.error('Código de error:', error.code)
+          console.error('Mensaje de error:', error.message)
+          console.error('Detalles:', error.details)
+          setRemoveStatus({ id, status: 'fail' })
+          setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+          return
         } else {
-          // Recargar historial después de eliminar
-          await loadHistoryFromSupabase()
+          console.log('Botón archivado exitosamente')
+          // Recargar historial después de archivar
+          const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
+          await loadHistoryFromSupabase(currentPage, actualPageSize, historyTab === 'archived')
         }
       }
 
       // Eliminar de estado local
       const newButtons = buttons.filter(btn => btn.id !== id)
       setButtons(newButtons)
-      saveButtonsToStorage(newButtons)
       setRemoveStatus({ id, status: 'success' })
       setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
     } catch (error) {
+      console.error('Error en archiveButton:', error)
+      setRemoveStatus({ id, status: 'fail' })
+      setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+    }
+  }
+
+  // Desarchivar un botón (restaurar desde soft delete en Supabase)
+  const unarchiveButton = async (id, shortId = null) => {
+    try {
+      // Si tiene shortId, restaurar desde archivado en Supabase
+      if (shortId && supabase && account) {
+        const ownerAddress = account.toLowerCase()
+        console.log('Desarchivando botón:', { shortId, ownerAddress })
+
+        const { data: updateData, error } = await supabase
+          .from('payment_buttons')
+          .update({ deleted_at: null })
+          .eq('id', shortId)
+          .ilike('owner_address', ownerAddress) // Case-insensitive
+          .select()
+
+        console.log('Resultado de desarchivar:', { updateData, error })
+
+        if (error) {
+          console.error('Error desarchivando en Supabase:', error)
+          console.error('Código de error:', error.code)
+          console.error('Mensaje de error:', error.message)
+          console.error('Detalles:', error.details)
+          setRemoveStatus({ id, status: 'fail' })
+          setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+          return
+        } else {
+          console.log('Botón desarchivado exitosamente')
+          // Recargar historial después de desarchivar (tanto activos como archivados)
+          const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
+          await loadHistoryFromSupabase(currentPage, actualPageSize, false) // Cargar activos
+          await loadHistoryFromSupabase(currentPage, actualPageSize, true) // Cargar archivados
+        }
+      }
+
+      // Eliminar de estado local de archivados
+      const newArchivedButtons = archivedButtons.filter(btn => btn.id !== id)
+      setArchivedButtons(newArchivedButtons)
+      setRemoveStatus({ id, status: 'success' })
+      setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+    } catch (error) {
+      console.error('Error en unarchiveButton:', error)
       setRemoveStatus({ id, status: 'fail' })
       setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
     }
   }
 
   // Cargar historial desde Supabase por owner
-  const loadHistoryFromSupabase = async (page = 1, size = pageSize, showDeleted = false) => {
-    if (!supabase || !account) return
+  const loadHistoryFromSupabase = async (page = 1, size = pageSize, showArchived = false) => {
+    if (!supabase || !account) {
+      console.log('loadHistoryFromSupabase: No supabase o account', { supabase: !!supabase, account })
+      return
+    }
 
     try {
       setIsLoadingHistory(true)
@@ -659,13 +769,23 @@ function App() {
       const from = (page - 1) * actualSize
       const to = from + actualSize - 1
 
+      console.log('Cargando historial desde Supabase:', {
+        ownerAddress,
+        page,
+        size: actualSize,
+        showArchived,
+        from,
+        to
+      })
+
+      // Usar ilike para búsqueda case-insensitive (por si hay registros antiguos sin normalizar)
       let query = supabase
         .from('payment_buttons')
         .select('*', { count: 'exact' })
-        .eq('owner_address', ownerAddress)
+        .ilike('owner_address', ownerAddress) // Case-insensitive
         .order('created_at', { ascending: false })
 
-      if (showDeleted) {
+      if (showArchived) {
         query = query.not('deleted_at', 'is', null)
       } else {
         query = query.is('deleted_at', null)
@@ -673,8 +793,23 @@ function App() {
 
       const { data, error, count } = await query.range(from, to)
 
+      console.log('Resultado de query Supabase:', {
+        dataLength: data?.length || 0,
+        count,
+        error: error ? {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        } : null,
+        ownerAddress
+      })
+
       if (error) {
         console.error('Error cargando historial:', error)
+        console.error('Código de error:', error.code)
+        console.error('Mensaje de error:', error.message)
+        console.error('Detalles:', error.details)
         return
       }
 
@@ -685,17 +820,18 @@ function App() {
         recipientAddress: item.recipient_address,
         amount: item.amount,
         concept: item.concept || '',
-        buttonText: item.button_text || 'Pagar',
+        buttonText: item.button_text || (language === 'es' ? 'Pagar' : 'Pay'),
         buttonColor: `#${item.button_color || '6366f1'}`,
         tokenAddress: item.token_address,
         paymentLink: `${window.location.origin}/${item.id}`,
+        paymentType: item.payment_type || 'fixed', // 'fixed' o 'editable'
         createdAt: item.created_at,
         deletedAt: item.deleted_at
       }))
 
-      if (showDeleted) {
-        setDeletedButtons(formattedButtons)
-        setTotalDeletedButtons(count || 0)
+      if (showArchived) {
+        setArchivedButtons(formattedButtons)
+        setTotalArchivedButtons(count || 0)
       } else {
         setButtons(formattedButtons)
         setTotalActiveButtons(count || 0)
@@ -707,14 +843,16 @@ function App() {
     }
   }
 
-  // Cargar botones al iniciar (solo si no es un link compartido)
+  // Cargar historial cuando se conecta una wallet
   useEffect(() => {
-    if (!isPaymentLink) {
-      loadButtonsFromStorage()
-      isInitialLoad.current = false
+    if (account && supabase && !isPaymentLink) {
+      const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
+      console.log('useEffect: Cargando historial porque account cambió', { account, supabase: !!supabase, isPaymentLink })
+      loadHistoryFromSupabase(currentPage, actualPageSize, historyTab === 'archived')
     }
+    // Si no hay wallet, no cargar nada (los botones aparecerán cuando se conecte)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [account, currentPage, pageSize, historyTab, isPaymentLink])
 
   // Nota: Los botones se guardan explícitamente en addPaymentButton y removeButton
   // No necesitamos un useEffect que guarde automáticamente para evitar loops
@@ -738,7 +876,7 @@ function App() {
             {account ? (
               <div className="payment-card-wallet">
                 <span className="wallet-address-small">
-                  {account.slice(0, 6)}...{account.slice(-4)}
+                  {account}
                 </span>
                 {currentNetwork && !currentNetwork.isPolygon && (
                   <button
@@ -771,8 +909,42 @@ function App() {
             onSwitchNetwork={switchToPolygon}
             isCompact={true}
             language={language}
+            paymentType={paymentButton.paymentType || 'fixed'}
           />
         </div>
+
+        <footer className="footer">
+          <p className="footer-credits">
+            <a
+              href={window.location.origin}
+              className="credits-link"
+            >
+              {language === 'es' ? 'Crea tu Propio Botón de Pago' : 'Create Your Own Payment Button'}
+            </a>
+          </p>
+          <p className="footer-credits">
+            {language === 'es' ? 'Hecho con ❤️ por ' : 'Made with ❤️ by '}
+            <a
+              href="https://polygonscan.com/name-lookup-search?id=jfscaramazza.eth"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="credits-link"
+            >
+              jfscaramazza.eth
+            </a>
+            {' | '}
+            {language === 'es' ? 'Ayúdanos a mantener la plataforma con tu aporte' : 'Help us maintain the platform with your contribution'}
+            {' '}
+            <a
+              href="http://defipago.netlify.app/bf5wU1"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="credits-link"
+            >
+              {language === 'es' ? 'aquí' : 'here'}
+            </a>
+          </p>
+        </footer>
       </div>
     )
   }
@@ -791,6 +963,29 @@ function App() {
       <header className="header">
         <h1>DEFIPAGO</h1>
         <p className="subtitle">{language === 'es' ? 'Generador de Botones de Pago DeFi' : 'DeFi Payment Button Generator'}</p>
+
+        <p className="credits-text">
+          {language === 'es' ? 'Hecho con ❤️ por ' : 'Made with ❤️ by '}
+          <a
+            href="https://polygonscan.com/name-lookup-search?id=jfscaramazza.eth"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="credits-link"
+          >
+            jfscaramazza.eth
+          </a>
+          {' | '}
+          {language === 'es' ? 'Ayúdanos a mantener la plataforma con tu aporte' : 'Help us maintain the platform with your contribution'}
+          {' '}
+          <a
+            href="http://defipago.netlify.app/bf5wU1"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="credits-link"
+          >
+            {language === 'es' ? 'aquí' : 'here'}
+          </a>
+        </p>
 
         <div className="header-lines-wrapper">
           <div className="header-info-line">
@@ -887,7 +1082,7 @@ function App() {
           language={language}
         />
 
-        {(buttons.length > 0 || deletedButtons.length > 0 || account) && (
+        {(buttons.length > 0 || archivedButtons.length > 0 || account) && (
           <section className="buttons-section">
             <div className="buttons-section-header">
               <h2>
@@ -909,33 +1104,19 @@ function App() {
                   </button>
                   <button
                     onClick={() => {
-                      setHistoryTab('deleted')
+                      setHistoryTab('archived')
                       setCurrentPage(1)
                     }}
-                    className={`history-tab ${historyTab === 'deleted' ? 'active' : ''}`}
+                    className={`history-tab ${historyTab === 'archived' ? 'active' : ''}`}
                   >
-                    {language === 'es' ? 'Eliminados' : 'Deleted'} ({totalDeletedButtons})
+                    {language === 'es' ? 'Archivados' : 'Archived'} ({totalArchivedButtons})
                   </button>
                 </div>
-              )}
-              {!account && (
-                <button
-                  onClick={clearStorage}
-                  className={`btn btn-clear-storage ${clearStorageStatus === 'success' ? 'btn-clear-storage-success' : ''} ${clearStorageStatus === 'fail' ? 'btn-clear-storage-fail' : ''}`}
-                  title={language === 'es' ? 'Borrar todos los botones guardados' : 'Clear all saved buttons'}
-                >
-                  {clearStorageStatus === 'success'
-                    ? 'Success'
-                    : clearStorageStatus === 'fail'
-                      ? 'Fail'
-                      : `🗑️ ${language === 'es' ? 'Borrar Memoria' : 'Clear Memory'}`
-                  }
-                </button>
               )}
             </div>
 
             {/* Selector de tamaño de página */}
-            {account && supabase && (historyTab === 'active' ? buttons.length > 0 : deletedButtons.length > 0) && (
+            {account && supabase && (historyTab === 'active' ? buttons.length > 0 : archivedButtons.length > 0) && (
               <div className="pagination-controls-top">
                 <label htmlFor="page-size-select" className="page-size-label">
                   {language === 'es' ? 'Por página:' : 'Per page:'}
@@ -990,7 +1171,7 @@ function App() {
             ) : (
               <>
                 <div className="buttons-grid">
-                  {(historyTab === 'active' ? buttons : deletedButtons).map(button => (
+                  {(historyTab === 'active' ? buttons : archivedButtons).map(button => (
                     <div key={button.id} className="button-card">
                       <PaymentButton
                         {...button}
@@ -1002,17 +1183,31 @@ function App() {
                         currentNetwork={currentNetwork}
                         onSwitchNetwork={switchToPolygon}
                         language={language}
+                        paymentType={button.paymentType}
                       />
                       {historyTab === 'active' && (
                         <button
-                          onClick={() => removeButton(button.id, button.shortId)}
+                          onClick={() => archiveButton(button.id, button.shortId)}
                           className={`btn-remove ${removeStatus.id === button.id && removeStatus.status === 'success' ? 'btn-remove-success' : ''} ${removeStatus.id === button.id && removeStatus.status === 'fail' ? 'btn-remove-fail' : ''}`}
                         >
                           {removeStatus.id === button.id && removeStatus.status === 'success'
-                            ? 'Success'
+                            ? (language === 'es' ? '✓ Archivado' : '✓ Archived')
                             : removeStatus.id === button.id && removeStatus.status === 'fail'
-                              ? 'Fail'
-                              : (language === 'es' ? 'Eliminar' : 'Remove')
+                              ? (language === 'es' ? '✗ Error' : '✗ Error')
+                              : (language === 'es' ? 'Archivar' : 'Archive')
+                          }
+                        </button>
+                      )}
+                      {historyTab === 'archived' && (
+                        <button
+                          onClick={() => unarchiveButton(button.id, button.shortId)}
+                          className={`btn-remove btn-unarchive ${removeStatus.id === button.id && removeStatus.status === 'success' ? 'btn-remove-success' : ''} ${removeStatus.id === button.id && removeStatus.status === 'fail' ? 'btn-remove-fail' : ''}`}
+                        >
+                          {removeStatus.id === button.id && removeStatus.status === 'success'
+                            ? (language === 'es' ? '✓ Desarchivado' : '✓ Unarchived')
+                            : removeStatus.id === button.id && removeStatus.status === 'fail'
+                              ? (language === 'es' ? '✗ Error' : '✗ Error')
+                              : (language === 'es' ? 'Desarchivar' : 'Unarchive')
                           }
                         </button>
                       )}
@@ -1031,11 +1226,11 @@ function App() {
                       {language === 'es' ? '← Anterior' : '← Previous'}
                     </button>
                     <span className="pagination-info">
-                      {language === 'es' ? 'Página' : 'Page'} {currentPage} {language === 'es' ? 'de' : 'of'} {Math.ceil((historyTab === 'active' ? totalActiveButtons : totalDeletedButtons) / (typeof pageSize === 'number' ? pageSize : 9)) || 1}
+                      {language === 'es' ? 'Página' : 'Page'} {currentPage} {language === 'es' ? 'de' : 'of'} {Math.ceil((historyTab === 'active' ? totalActiveButtons : totalArchivedButtons) / (typeof pageSize === 'number' ? pageSize : 9)) || 1}
                     </span>
                     <button
                       onClick={() => setCurrentPage(prev => prev + 1)}
-                      disabled={currentPage >= Math.ceil((historyTab === 'active' ? totalActiveButtons : totalDeletedButtons) / (typeof pageSize === 'number' ? pageSize : 9)) || isLoadingHistory}
+                      disabled={currentPage >= Math.ceil((historyTab === 'active' ? totalActiveButtons : totalArchivedButtons) / (typeof pageSize === 'number' ? pageSize : 9)) || isLoadingHistory}
                       className="btn-pagination"
                     >
                       {language === 'es' ? 'Siguiente →' : 'Next →'}
@@ -1049,9 +1244,28 @@ function App() {
       </main>
 
       <footer className="footer">
-        <p>Token Seleccionado: {selectedTokenAddress}</p>
-        <p>Red Requerida: Polygon Mainnet</p>
-        {tokenSymbol && <p>Símbolo: {tokenSymbol}</p>}
+        <p className="footer-credits">
+          {language === 'es' ? 'Hecho con ❤️ por ' : 'Made with ❤️ by '}
+          <a
+            href="https://polygonscan.com/name-lookup-search?id=jfscaramazza.eth"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="credits-link"
+          >
+            jfscaramazza.eth
+          </a>
+          {' | '}
+          {language === 'es' ? 'Ayúdanos a mantener la plataforma con tu aporte' : 'Help us maintain the platform with your contribution'}
+          {' '}
+          <a
+            href="http://defipago.netlify.app/bf5wU1"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="credits-link"
+          >
+            {language === 'es' ? 'aquí' : 'here'}
+          </a>
+        </p>
       </footer>
     </div>
   )

@@ -18,7 +18,8 @@ function PaymentButton({
   currentNetwork,
   onSwitchNetwork,
   isCompact = false,
-  language = 'es'
+  language = 'es',
+  paymentType = 'fixed' // 'fixed' o 'editable'
 }) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [status, setStatus] = useState('')
@@ -27,6 +28,18 @@ function PaymentButton({
   const [balance, setBalance] = useState(null)
   const [isLoadingBalance, setIsLoadingBalance] = useState(false)
   const [txHash, setTxHash] = useState(null)
+  const [editableAmount, setEditableAmount] = useState(amount)
+  
+  // Verificar si el usuario es el creador del botón (owner)
+  const isOwner = account && recipientAddress && account.toLowerCase() === recipientAddress.toLowerCase()
+  
+  // Determinar si el monto puede ser editado
+  const canEditAmount = paymentType === 'editable' || (paymentType === 'fixed' && isOwner)
+  
+  // Actualizar monto editable cuando cambia el monto original
+  useEffect(() => {
+    setEditableAmount(amount)
+  }, [amount])
 
   // Efecto de confetti cuando se confirma el pago
   useEffect(() => {
@@ -160,6 +173,14 @@ function PaymentButton({
       setStatus('')
       setTxHash(null)
 
+      // Usar el monto editable si está disponible, sino el monto original
+      const paymentAmount = canEditAmount && editableAmount ? editableAmount : amount
+      
+      // Validar que el monto sea válido
+      if (!paymentAmount || parseFloat(paymentAmount) <= 0) {
+        throw new Error(language === 'es' ? 'Monto inválido' : 'Invalid amount')
+      }
+
       const signer = await provider.getSigner()
       
       let tokenContract, decimals, amountInWei, balanceWei
@@ -167,12 +188,12 @@ function PaymentButton({
       if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000001010') {
         // POL es nativo, usar transferencia de ETH
         decimals = 18
-        amountInWei = ethers.parseEther(amount)
+        amountInWei = ethers.parseEther(paymentAmount)
         balanceWei = await provider.getBalance(account)
       } else {
         tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer)
         decimals = await tokenContract.decimals()
-        amountInWei = ethers.parseUnits(amount, decimals)
+        amountInWei = ethers.parseUnits(paymentAmount, decimals)
         balanceWei = await tokenContract.balanceOf(account)
       }
 
@@ -181,81 +202,17 @@ function PaymentButton({
         throw new Error('Balance insuficiente')
       }
 
-      // Realizar la transferencia con concepto en Input Data
+      // Realizar la transferencia (sin incluir concepto en la transacción)
       let tx
       if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000001010') {
-        // Para POL (nativo), intentar incluir concepto en el campo data
-        // Algunas cuentas (internas de MetaMask) no permiten incluir data
-        if (concept) {
-          try {
-            // Intentar enviar con concepto en data
-            tx = await signer.sendTransaction({
-              to: recipientAddress,
-              value: amountInWei,
-              data: ethers.hexlify(ethers.toUtf8Bytes(concept))
-            })
-          } catch (error) {
-            // Si falla porque la cuenta no permite data (error de MetaMask),
-            // enviar sin concepto
-            const errorMessage = error.message || error.toString() || ''
-            if (errorMessage.includes('cannot include data') || 
-                errorMessage.includes('internal accounts') ||
-                error.code === -32602) {
-              console.warn('La cuenta de destino no permite incluir data, enviando sin concepto')
-              tx = await signer.sendTransaction({
-                to: recipientAddress,
-                value: amountInWei
-              })
-            } else {
-              // Si es otro error, relanzarlo
-              throw error
-            }
-          }
-        } else {
-          // Sin concepto, enviar sin data
-          tx = await signer.sendTransaction({
-            to: recipientAddress,
-            value: amountInWei
-          })
-        }
+        // Para POL (nativo), enviar sin data
+        tx = await signer.sendTransaction({
+          to: recipientAddress,
+          value: amountInWei
+        })
       } else {
-        // Para tokens ERC-20, incluir concepto en Input Data
-        // Construir el calldata de transfer y agregar el concepto como datos adicionales
-        const transferInterface = new ethers.Interface([
-          "function transfer(address to, uint256 amount) external returns (bool)"
-        ])
-        const transferData = transferInterface.encodeFunctionData("transfer", [recipientAddress, amountInWei])
-        
-        if (concept) {
-          // Intentar incluir el concepto concatenado al calldata
-          // El contrato procesará solo el calldata de transfer (primeros bytes)
-          // Los bytes adicionales del concepto serán visibles en Polygonscan como Input Data
-          const conceptBytes = ethers.toUtf8Bytes(concept)
-          const fullData = ethers.concat([transferData, conceptBytes])
-          
-          // Verificar primero si la transacción funcionará estimando el gas
-          try {
-            await provider.estimateGas({
-              to: tokenAddress,
-              data: fullData,
-              from: account
-            })
-            
-            // Si la estimación funciona, enviar la transacción con concepto
-            tx = await signer.sendTransaction({
-              to: tokenAddress,
-              data: fullData
-            })
-          } catch (error) {
-            // Si falla la estimación (el contrato no acepta datos adicionales),
-            // usar transfer normal sin concepto
-            console.warn('El contrato no acepta datos adicionales, usando transfer estándar:', error)
-            tx = await tokenContract.transfer(recipientAddress, amountInWei)
-          }
-        } else {
-          // Sin concepto, usar transfer normal
-          tx = await tokenContract.transfer(recipientAddress, amountInWei)
-        }
+        // Para tokens ERC-20, usar transfer estándar
+        tx = await tokenContract.transfer(recipientAddress, amountInWei)
       }
       
       // Guardar hash de la transacción
@@ -302,8 +259,8 @@ function PaymentButton({
     }
   }
 
-  // Obtener nombre del token desde la lista de tokens disponibles
-  const getTokenName = () => {
+  // Obtener nombre y ticker del token desde la lista de tokens disponibles
+  const getTokenInfo = () => {
     const AVAILABLE_TOKENS = [
       { address: '0x87bdfbe98Ba55104701b2F2e999982a317905637', symbol: 'CNKT+', name: 'CNKT+' },
       { address: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', symbol: 'USDC', name: 'USDC' },
@@ -311,8 +268,13 @@ function PaymentButton({
       { address: '0x0000000000000000000000000000000000001010', symbol: 'POL', name: 'POL' }
     ]
     const token = AVAILABLE_TOKENS.find(t => t.address.toLowerCase() === tokenAddress.toLowerCase())
-    return token ? token.name : (buttonTokenSymbol || tokenSymbol || 'TOKEN')
+    if (token) {
+      return { name: token.name, symbol: token.symbol }
+    }
+    return { name: buttonTokenSymbol || tokenSymbol || 'TOKEN', symbol: buttonTokenSymbol || tokenSymbol || 'TOKEN' }
   }
+  
+  const tokenInfo = getTokenInfo()
 
   return (
     <div className={`payment-button-container ${isCompact ? 'compact' : ''}`}>
@@ -323,33 +285,80 @@ function PaymentButton({
             <p className="concept-text">{concept}</p>
           </div>
         )}
-        <p><strong>{language === 'es' ? 'Destinatario:' : 'Recipient:'}</strong> {recipientAddress.slice(0, 6)}...{recipientAddress.slice(-4)}</p>
-        <p>
-          <strong>{language === 'es' ? 'Monto:' : 'Amount:'}</strong> {amount}{' '}
-          <a 
-            href={`https://polygonscan.com/token/${tokenAddress}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="token-link-inline"
-            title="Ver token en Polygonscan"
-          >
-            {buttonTokenSymbol || tokenSymbol || 'tokens'}
-          </a>
-        </p>
-        {isCompact && (
-          <p className="token-name-display">
-            <strong>{language === 'es' ? 'Token:' : 'Token:'}</strong>{' '}
+        <div className="recipient-section">
+          <p className="recipient-label">
+            <strong>{language === 'es' ? 'Destinatario:' : 'Recipient:'}</strong>
+          </p>
+          <p className="recipient-address">
             <a 
-              href={`https://polygonscan.com/token/${tokenAddress}`}
+              href={`https://polygonscan.com/address/${recipientAddress}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="token-link-inline token-name-link"
-              title="Ver token en Polygonscan"
+              className="recipient-address-link"
+              title={language === 'es' ? 'Ver en Polygonscan' : 'View on Polygonscan'}
             >
-              {getTokenName()}
+              {recipientAddress}
             </a>
           </p>
-        )}
+        </div>
+        <div className="amount-section">
+          {canEditAmount ? (
+            <div className="amount-input-group-full">
+              <span className="amount-label">
+                <strong>{language === 'es' ? 'Monto:' : 'Amount:'}</strong>
+              </span>
+              <input
+                type="number"
+                id="editable-amount"
+                value={editableAmount}
+                onChange={(e) => setEditableAmount(e.target.value)}
+                step="0.000001"
+                min="0"
+                className="amount-input-full"
+                placeholder={amount}
+              />
+              <span className="amount-token-symbol">
+                <a 
+                  href={`https://polygonscan.com/token/${tokenAddress}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="token-link-inline"
+                  title="Ver token en Polygonscan"
+                >
+                  {tokenInfo.name} ({tokenInfo.symbol})
+                </a>
+              </span>
+              {paymentType === 'fixed' && isOwner && (
+                <p className="amount-hint">
+                  {language === 'es' ? 'Solo tú puedes cambiar este monto (Fijo)' : 'Only you can change this amount (Fixed)'}
+                </p>
+              )}
+              {paymentType === 'editable' && (
+                <p className="amount-hint">
+                  {language === 'es' ? 'Puedes cambiar el monto (Variable)' : 'You can change the amount (Variable)'}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="amount-display-full">
+              <span className="amount-label">
+                <strong>{language === 'es' ? 'Monto:' : 'Amount:'}</strong>
+              </span>
+              <span className="amount-value">{amount}</span>
+              <span className="amount-token-symbol">
+                <a 
+                  href={`https://polygonscan.com/token/${tokenAddress}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="token-link-inline"
+                  title="Ver token en Polygonscan"
+                >
+                  {tokenInfo.name} ({tokenInfo.symbol})
+                </a>
+              </span>
+            </div>
+          )}
+        </div>
         {account && (
           <p className="balance-info">
             <strong>{language === 'es' ? 'Tu balance:' : 'Your balance:'}</strong> {
@@ -366,7 +375,7 @@ function PaymentButton({
                         className="token-link-inline"
                         title="Ver token en Polygonscan"
                       >
-                        {buttonTokenSymbol || tokenSymbol || 'tokens'}
+                        {tokenInfo.name} ({tokenInfo.symbol})
                       </a>
                     </>
                   )
@@ -462,15 +471,6 @@ function PaymentButton({
           {language === 'es' ? 'Conecta tu wallet para pagar' : 'Connect your wallet to pay'}
         </p>
       )}
-      
-      <div className="create-button-link">
-        <a 
-          href={window.location.origin}
-          className="create-button-link-text"
-        >
-          {language === 'es' ? 'Crea tu Propio Botón de Pago' : 'Create Your Own Payment Button'}
-        </a>
-      </div>
     </div>
   )
 }

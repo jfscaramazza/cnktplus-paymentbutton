@@ -7,6 +7,7 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
   const [concept, setConcept] = useState('')
   const [buttonText, setButtonText] = useState(language === 'es' ? 'Pagar' : 'Pay')
   const [buttonColor, setButtonColor] = useState('#6366f1')
+  const [paymentType, setPaymentType] = useState('fixed') // 'fixed' o 'editable'
   const [isGenerating, setIsGenerating] = useState(false)
 
   // Auto-completar con la wallet conectada solo si el campo está vacío
@@ -38,7 +39,8 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
         concept,
         buttonText,
         buttonColor,
-        tokenAddress
+        tokenAddress,
+        paymentType
       }
 
       await onGenerate(buttonData)
@@ -49,6 +51,7 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
       setConcept('')
       setButtonText(language === 'es' ? 'Pagar' : 'Pay')
       setButtonColor('#6366f1')
+      setPaymentType('fixed')
     } catch (error) {
       console.error('Error generando botón:', error)
       alert(language === 'es' ? 'Error al generar el botón. Por favor, intenta de nuevo.' : 'Error generating button. Please try again.')
@@ -113,6 +116,26 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
             required
             className="form-input"
           />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="paymentType">{language === 'es' ? 'Tipo de Pago:' : 'Payment Type:'}</label>
+          <select
+            id="paymentType"
+            value={paymentType}
+            onChange={(e) => setPaymentType(e.target.value)}
+            className="form-input"
+            required
+          >
+            <option value="fixed">{language === 'es' ? 'Fijo' : 'Fixed'}</option>
+            <option value="editable">{language === 'es' ? 'Variable' : 'Variable'}</option>
+          </select>
+          <p className="form-hint">
+            {paymentType === 'fixed'
+              ? (language === 'es' ? 'Solo el creador del botón puede cambiar el monto.' : 'Only the button creator can change the amount.')
+              : (language === 'es' ? 'Cualquiera puede cambiar el monto en su UI.' : 'Anyone can change the amount in their UI.')
+            }
+          </p>
         </div>
 
         <div className="form-group">
