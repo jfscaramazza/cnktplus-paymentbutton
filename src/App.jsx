@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ethers } from 'ethers'
 import PaymentButtonGenerator from './components/PaymentButtonGenerator'
 import PaymentButton from './components/PaymentButton'
@@ -42,6 +42,7 @@ const AVAILABLE_TOKENS = [
   }
 ]
 
+
 // Dirección del token por defecto
 const DEFAULT_TOKEN_ADDRESS = AVAILABLE_TOKENS.find(t => t.default)?.address || AVAILABLE_TOKENS[0].address
 
@@ -76,6 +77,13 @@ function App() {
   const [loadedFromLink, setLoadedFromLink] = useState(false)
   const [selectedTokenAddress, setSelectedTokenAddress] = useState(DEFAULT_TOKEN_ADDRESS)
   const [isPaymentLink, setIsPaymentLink] = useState(false)
+  const isInitialLoad = useRef(true)
+  const [language, setLanguage] = useState(() => {
+    const saved = localStorage.getItem('cnktplus-pay-language')
+    return saved || 'es'
+  })
+  const [removeStatus, setRemoveStatus] = useState({ id: null, status: null })
+  const [clearStorageStatus, setClearStorageStatus] = useState(null)
 
   // Cargar información del token
   const loadTokenInfo = async (provider, tokenAddress = selectedTokenAddress) => {
@@ -129,6 +137,13 @@ function App() {
     if (provider) {
       await loadTokenInfo(provider, newTokenAddress)
     }
+  }
+
+  // Toggle language
+  const toggleLanguage = () => {
+    const newLanguage = language === 'es' ? 'en' : 'es'
+    setLanguage(newLanguage)
+    localStorage.setItem('cnktplus-pay-language', newLanguage)
   }
 
   // Detectar y actualizar información de red
@@ -325,6 +340,43 @@ function App() {
     }
   }, [provider, isPaymentLink])
 
+  // Guardar botones en localStorage
+  const saveButtonsToStorage = (buttonsToSave) => {
+    try {
+      localStorage.setItem('cnktplus-pay-buttons', JSON.stringify(buttonsToSave))
+    } catch (error) {
+      console.error('Error guardando botones en localStorage:', error)
+    }
+  }
+
+  // Cargar botones desde localStorage
+  const loadButtonsFromStorage = () => {
+    try {
+      const savedButtons = localStorage.getItem('cnktplus-pay-buttons')
+      if (savedButtons) {
+        const parsedButtons = JSON.parse(savedButtons)
+        setButtons(parsedButtons)
+      }
+    } catch (error) {
+      console.error('Error cargando botones desde localStorage:', error)
+    }
+  }
+
+  // Borrar memoria
+  const clearStorage = () => {
+    try {
+      if (window.confirm(language === 'es' ? '¿Estás seguro de que deseas borrar todos los botones guardados?' : 'Are you sure you want to clear all saved buttons?')) {
+        localStorage.removeItem('cnktplus-pay-buttons')
+        setButtons([])
+        setClearStorageStatus('success')
+        setTimeout(() => setClearStorageStatus(null), 2000)
+      }
+    } catch (error) {
+      setClearStorageStatus('fail')
+      setTimeout(() => setClearStorageStatus(null), 2000)
+    }
+  }
+
   // Agregar un nuevo botón de pago
   const addPaymentButton = (buttonData) => {
     const buttonId = Date.now()
@@ -334,7 +386,9 @@ function App() {
       tokenAddress: selectedTokenAddress, // Asegurar que se guarde el token seleccionado
       paymentLink: generatePaymentLink({ ...buttonData, tokenAddress: selectedTokenAddress })
     }
-    setButtons([...buttons, fullButtonData])
+    const newButtons = [...buttons, fullButtonData]
+    setButtons(newButtons)
+    saveButtonsToStorage(newButtons)
   }
 
   // Cargar botón desde URL al montar el componente
@@ -344,17 +398,46 @@ function App() {
 
   // Eliminar un botón
   const removeButton = (id) => {
-    setButtons(buttons.filter(btn => btn.id !== id))
+    try {
+      const newButtons = buttons.filter(btn => btn.id !== id)
+      setButtons(newButtons)
+      saveButtonsToStorage(newButtons)
+      setRemoveStatus({ id, status: 'success' })
+      setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+    } catch (error) {
+      setRemoveStatus({ id, status: 'fail' })
+      setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+    }
   }
+
+  // Cargar botones al iniciar (solo si no es un link compartido)
+  useEffect(() => {
+    if (!isPaymentLink) {
+      loadButtonsFromStorage()
+      isInitialLoad.current = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Nota: Los botones se guardan explícitamente en addPaymentButton y removeButton
+  // No necesitamos un useEffect que guarde automáticamente para evitar loops
 
   // Vista simplificada para links compartidos
   if (isPaymentLink && buttons.length > 0) {
     const paymentButton = buttons[0]
     return (
       <div className="app payment-link-view">
+        <button 
+          onClick={toggleLanguage}
+          className="btn-language-fixed"
+          title={language === 'es' ? 'Switch to English' : 'Cambiar a Español'}
+        >
+          {language === 'es' ? 'EN' : 'ES'}
+        </button>
+        
         <div className="payment-card">
           <div className="payment-card-header">
-            <h2>CNKT+ Pay</h2>
+            <h2>CNKT+ PAY</h2>
             {account ? (
               <div className="payment-card-wallet">
                 <span className="wallet-address-small">
@@ -390,6 +473,7 @@ function App() {
             currentNetwork={currentNetwork}
             onSwitchNetwork={switchToPolygon}
             isCompact={true}
+            language={language}
           />
         </div>
       </div>
@@ -399,70 +483,87 @@ function App() {
   // Vista completa (generador de botones)
   return (
     <div className="app">
+      <button 
+        onClick={toggleLanguage}
+        className="btn-language-fixed"
+        title={language === 'es' ? 'Switch to English' : 'Cambiar a Español'}
+      >
+        {language === 'es' ? 'EN' : 'ES'}
+      </button>
+      
       <header className="header">
-        <h1>CNKT+ Pay</h1>
-        <p className="subtitle">Generador de Botones de Pago DeFi</p>
+        <h1>CNKT+ PAY</h1>
+        <p className="subtitle">{language === 'es' ? 'Generador de Botones de Pago DeFi' : 'DeFi Payment Button Generator'}</p>
         
-        <div className="token-selector-section">
-          <label htmlFor="token-select" className="token-select-label">
-            Seleccionar Token:
-          </label>
-          <select
-            id="token-select"
-            value={selectedTokenAddress}
-            onChange={(e) => handleTokenChange(e.target.value)}
-            className="token-select"
-            disabled={isLoadingToken}
-          >
-            {AVAILABLE_TOKENS.map((token) => (
-              <option key={token.address} value={token.address}>
-                {token.name} ({token.symbol})
-              </option>
-            ))}
-          </select>
-          {tokenSymbol && (
-            <span className="token-badge">
-              {tokenName} ({tokenSymbol})
-            </span>
-          )}
+        <div className="header-info-line">
+          <div className="token-selector-inline">
+            <label htmlFor="token-select" className="token-select-label-inline">
+              {language === 'es' ? 'Token:' : 'Token:'}
+            </label>
+            <select
+              id="token-select"
+              value={selectedTokenAddress}
+              onChange={(e) => handleTokenChange(e.target.value)}
+              className="token-select token-select-inline"
+              disabled={isLoadingToken}
+            >
+              {AVAILABLE_TOKENS.map((token) => (
+                <option key={token.address} value={token.address}>
+                  {token.name} ({token.symbol})
+                </option>
+              ))}
+            </select>
+            {tokenSymbol && (
+              <a 
+                href={`https://polygonscan.com/token/${selectedTokenAddress}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="token-badge token-link token-badge-inline"
+                title="Ver en Polygonscan"
+              >
+                {tokenName} ({tokenSymbol})
+              </a>
+            )}
+          </div>
         </div>
 
-        {account ? (
-          <div className="wallet-info">
-            <div className="wallet-details">
-              <span className="wallet-address">
+        <div className="header-wallet-line">
+          {account ? (
+            <>
+              {currentNetwork && (
+                <span className={`network-badge network-badge-inline ${currentNetwork.isPolygon ? 'polygon' : 'other'}`}>
+                  {currentNetwork.name}
+                </span>
+              )}
+              <span className="wallet-address wallet-address-inline">
                 {account.slice(0, 6)}...{account.slice(-4)}
               </span>
-              {currentNetwork && (
-                <div className="network-info">
-                  <span className={`network-badge ${currentNetwork.isPolygon ? 'polygon' : 'other'}`}>
-                    {currentNetwork.name}
-                  </span>
-                  {!currentNetwork.isPolygon && (
-                    <button 
-                      onClick={switchToPolygon} 
-                      className="btn btn-switch-network"
-                      title="Cambiar a Polygon Mainnet"
-                    >
-                      Cambiar a Polygon
-                    </button>
-                  )}
-                </div>
+              {currentNetwork && !currentNetwork.isPolygon && (
+                <button 
+                  onClick={switchToPolygon} 
+                  className="btn btn-switch-network btn-inline"
+                  title={language === 'es' ? 'Cambiar a Polygon Mainnet' : 'Switch to Polygon Mainnet'}
+                >
+                  {language === 'es' ? 'Cambiar a Polygon' : 'Switch to Polygon'}
+                </button>
               )}
-            </div>
-            <button onClick={disconnectWallet} className="btn btn-secondary">
-              Desconectar
+              <button onClick={disconnectWallet} className="btn btn-secondary btn-inline">
+                {language === 'es' ? 'Desconectar' : 'Disconnect'}
+              </button>
+            </>
+          ) : (
+            <button 
+              onClick={connectWallet} 
+              className="btn btn-primary btn-inline"
+              disabled={isConnecting}
+            >
+              {isConnecting 
+                ? (language === 'es' ? 'Conectando...' : 'Connecting...')
+                : (language === 'es' ? 'Conectar Wallet' : 'Connect Wallet')
+              }
             </button>
-          </div>
-        ) : (
-          <button 
-            onClick={connectWallet} 
-            className="btn btn-primary"
-            disabled={isConnecting}
-          >
-            {isConnecting ? 'Conectando...' : 'Conectar Wallet'}
-          </button>
-        )}
+          )}
+        </div>
       </header>
 
       <main className="main-content">
@@ -472,11 +573,26 @@ function App() {
           provider={provider}
           account={account}
           tokenSymbol={tokenSymbol}
+          language={language}
         />
 
         {buttons.length > 0 && (
           <section className="buttons-section">
-            <h2>Botones Generados</h2>
+            <div className="buttons-section-header">
+              <h2>{language === 'es' ? 'Botones Generados' : 'Generated Buttons'}</h2>
+              <button 
+                onClick={clearStorage}
+                className={`btn btn-clear-storage ${clearStorageStatus === 'success' ? 'btn-clear-storage-success' : ''} ${clearStorageStatus === 'fail' ? 'btn-clear-storage-fail' : ''}`}
+                title={language === 'es' ? 'Borrar todos los botones guardados' : 'Clear all saved buttons'}
+              >
+                {clearStorageStatus === 'success' 
+                  ? 'Success' 
+                  : clearStorageStatus === 'fail'
+                  ? 'Fail'
+                  : `🗑️ ${language === 'es' ? 'Borrar Memoria' : 'Clear Memory'}`
+                }
+              </button>
+            </div>
             <div className="buttons-grid">
               {buttons.map(button => (
                 <div key={button.id} className="button-card">
@@ -489,12 +605,18 @@ function App() {
                     tokenSymbol={tokenSymbol}
                     currentNetwork={currentNetwork}
                     onSwitchNetwork={switchToPolygon}
+                    language={language}
                   />
                   <button 
                     onClick={() => removeButton(button.id)}
-                    className="btn-remove"
+                    className={`btn-remove ${removeStatus.id === button.id && removeStatus.status === 'success' ? 'btn-remove-success' : ''} ${removeStatus.id === button.id && removeStatus.status === 'fail' ? 'btn-remove-fail' : ''}`}
                   >
-                    Eliminar
+                    {removeStatus.id === button.id && removeStatus.status === 'success' 
+                      ? 'Success' 
+                      : removeStatus.id === button.id && removeStatus.status === 'fail'
+                      ? 'Fail'
+                      : (language === 'es' ? 'Eliminar' : 'Remove')
+                    }
                   </button>
                 </div>
               ))}

@@ -1,22 +1,24 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ethers } from 'ethers'
 
-function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, tokenSymbol }) {
+function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, tokenSymbol, language = 'es' }) {
   const [recipientAddress, setRecipientAddress] = useState('')
   const [amount, setAmount] = useState('')
   const [concept, setConcept] = useState('')
-  const [buttonText, setButtonText] = useState('Pagar')
+  const [buttonText, setButtonText] = useState(language === 'es' ? 'Pagar' : 'Pay')
   const [buttonColor, setButtonColor] = useState('#6366f1')
   const [isGenerating, setIsGenerating] = useState(false)
+
+  // Auto-completar con la wallet conectada solo si el campo está vacío
+  useEffect(() => {
+    if (account && recipientAddress === '') {
+      setRecipientAddress(account)
+    }
+  }, [account]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGenerate = (e) => {
     e.preventDefault()
     
-    if (!account) {
-      alert('Por favor, conecta tu wallet primero.')
-      return
-    }
-
     if (!recipientAddress || !ethers.isAddress(recipientAddress)) {
       alert('Por favor, ingresa una dirección de wallet válida.')
       return
@@ -51,10 +53,10 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
 
   return (
     <section className="generator-section">
-      <h2>Generar Botón de Pago</h2>
+      <h2>{language === 'es' ? 'Generar Botón de Pago' : 'Generate Payment Button'}</h2>
       <form onSubmit={handleGenerate} className="generator-form">
         <div className="form-group">
-          <label htmlFor="recipient">Dirección del Destinatario:</label>
+          <label htmlFor="recipient">{language === 'es' ? 'Dirección del Destinatario:' : 'Recipient Address:'}</label>
           <input
             type="text"
             id="recipient"
@@ -67,7 +69,7 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
         </div>
 
         <div className="form-group">
-          <label htmlFor="amount">Monto a Pagar {tokenSymbol && `(${tokenSymbol})`}:</label>
+          <label htmlFor="amount">{language === 'es' ? 'Monto a Pagar' : 'Amount to Pay'} {tokenSymbol && `(${tokenSymbol})`}:</label>
           <input
             type="number"
             id="amount"
@@ -82,33 +84,33 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
         </div>
 
         <div className="form-group">
-          <label htmlFor="concept">Concepto del Pago:</label>
+          <label htmlFor="concept">{language === 'es' ? 'Concepto del Pago:' : 'Payment Concept:'}</label>
           <input
             type="text"
             id="concept"
             value={concept}
             onChange={(e) => setConcept(e.target.value)}
-            placeholder="Ej: Pago de servicios, Producto XYZ, etc."
+            placeholder={language === 'es' ? 'Ej: Pago de servicios, Producto XYZ, etc.' : 'E.g: Service payment, Product XYZ, etc.'}
             required
             className="form-input"
           />
         </div>
 
         <div className="form-group">
-          <label htmlFor="buttonText">Texto del Botón:</label>
+          <label htmlFor="buttonText">{language === 'es' ? 'Texto del Botón:' : 'Button Text:'}</label>
           <input
             type="text"
             id="buttonText"
             value={buttonText}
             onChange={(e) => setButtonText(e.target.value)}
-            placeholder="Pagar"
+            placeholder={language === 'es' ? 'Pagar' : 'Pay'}
             required
             className="form-input"
           />
         </div>
 
         <div className="form-group">
-          <label htmlFor="buttonColor">Color del Botón:</label>
+          <label htmlFor="buttonColor">{language === 'es' ? 'Color del Botón:' : 'Button Color:'}</label>
           <input
             type="color"
             id="buttonColor"
@@ -121,16 +123,13 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
         <button 
           type="submit" 
           className="btn btn-primary btn-generate"
-          disabled={isGenerating || !account}
+          disabled={isGenerating}
         >
-          {isGenerating ? 'Generando...' : 'Generar Botón'}
+          {isGenerating 
+            ? (language === 'es' ? 'Generando...' : 'Generating...')
+            : (language === 'es' ? 'Generar Botón' : 'Generate Button')
+          }
         </button>
-
-        {!account && (
-          <p className="warning-text">
-            ⚠️ Conecta tu wallet para generar botones de pago
-          </p>
-        )}
       </form>
     </section>
   )
