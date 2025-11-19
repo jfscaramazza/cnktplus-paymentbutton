@@ -407,11 +407,9 @@ function App() {
         return `${window.location.origin}${window.location.pathname}?payment&${params.toString()}`
       }
 
-      // Retornar link corto (asegurar que tenga / antes del ID)
-      const basePath = window.location.pathname.endsWith('/')
-        ? window.location.pathname
-        : window.location.pathname + '/'
-      return `${window.location.origin}${basePath}${shortId}`
+      // Retornar link corto
+      const basePath = window.location.pathname === '/' ? '' : window.location.pathname
+      return `${window.location.origin}${basePath}/${shortId}`
     } catch (error) {
       console.error('Error generando link corto:', error)
       // Fallback al método antiguo
