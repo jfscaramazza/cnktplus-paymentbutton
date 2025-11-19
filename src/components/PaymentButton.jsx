@@ -181,15 +181,54 @@ function PaymentButton({
         throw new Error('Balance insuficiente')
       }
 
-      // Realizar la transferencia
+      // Realizar la transferencia con concepto en Input Data
       let tx
       if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000001010') {
+        // Para POL (nativo), incluir concepto en el campo data
+        // El concepto será visible en Polygonscan como Input Data
         tx = await signer.sendTransaction({
           to: recipientAddress,
-          value: amountInWei
+          value: amountInWei,
+          data: concept ? ethers.hexlify(ethers.toUtf8Bytes(concept)) : '0x'
         })
       } else {
-        tx = await tokenContract.transfer(recipientAddress, amountInWei)
+        // Para tokens ERC-20, incluir concepto en Input Data
+        // Construir el calldata de transfer y agregar el concepto como datos adicionales
+        const transferInterface = new ethers.Interface([
+          "function transfer(address to, uint256 amount) external returns (bool)"
+        ])
+        const transferData = transferInterface.encodeFunctionData("transfer", [recipientAddress, amountInWei])
+        
+        if (concept) {
+          // Intentar incluir el concepto concatenado al calldata
+          // El contrato procesará solo el calldata de transfer (primeros bytes)
+          // Los bytes adicionales del concepto serán visibles en Polygonscan como Input Data
+          const conceptBytes = ethers.toUtf8Bytes(concept)
+          const fullData = ethers.concat([transferData, conceptBytes])
+          
+          // Verificar primero si la transacción funcionará estimando el gas
+          try {
+            await provider.estimateGas({
+              to: tokenAddress,
+              data: fullData,
+              from: account
+            })
+            
+            // Si la estimación funciona, enviar la transacción con concepto
+            tx = await signer.sendTransaction({
+              to: tokenAddress,
+              data: fullData
+            })
+          } catch (error) {
+            // Si falla la estimación (el contrato no acepta datos adicionales),
+            // usar transfer normal sin concepto
+            console.warn('El contrato no acepta datos adicionales, usando transfer estándar:', error)
+            tx = await tokenContract.transfer(recipientAddress, amountInWei)
+          }
+        } else {
+          // Sin concepto, usar transfer normal
+          tx = await tokenContract.transfer(recipientAddress, amountInWei)
+        }
       }
       
       // Guardar hash de la transacción

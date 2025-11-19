@@ -208,14 +208,21 @@ function App() {
     }
   }
 
-  // Conectar wallet
+  // Conectar wallet - siempre pide verificación
   const connectWallet = async () => {
     if (typeof window.ethereum !== 'undefined') {
       try {
         setIsConnecting(true)
+        
+        // Remover listeners anteriores si existen
+        if (window.ethereum) {
+          window.ethereum.removeAllListeners('chainChanged')
+          window.ethereum.removeAllListeners('accountsChanged')
+        }
+        
         const provider = new ethers.BrowserProvider(window.ethereum)
         
-        // Solicitar acceso a la cuenta
+        // Solicitar acceso a la cuenta (siempre pide verificación)
         await provider.send("eth_requestAccounts", [])
         const signer = await provider.getSigner()
         const address = await signer.getAddress()
@@ -237,12 +244,13 @@ function App() {
           setProvider(newProvider)
         })
 
-        // Escuchar cambios de cuenta
+        // Escuchar cambios de cuenta (solo si ya está conectado)
         window.ethereum.on('accountsChanged', async (accounts) => {
           if (accounts.length === 0) {
-            setAccount(null)
-            setProvider(null)
+            // Usuario desconectó desde MetaMask
+            disconnectWallet()
           } else {
+            // Usuario cambió de cuenta en MetaMask
             const newProvider = new ethers.BrowserProvider(window.ethereum)
             const signer = await newProvider.getSigner()
             const address = await signer.getAddress()
@@ -254,16 +262,18 @@ function App() {
         })
       } catch (error) {
         console.error('Error conectando wallet:', error)
-        alert('Error al conectar la wallet. Por favor, asegúrate de tener MetaMask instalado.')
+        if (error.code !== 4001) { // No mostrar error si el usuario cancela
+          alert(language === 'es' ? 'Error al conectar la wallet. Por favor, asegúrate de tener MetaMask instalado.' : 'Error connecting wallet. Please make sure you have MetaMask installed.')
+        }
       } finally {
         setIsConnecting(false)
       }
     } else {
-      alert('Por favor, instala MetaMask para usar esta aplicación.')
+      alert(language === 'es' ? 'Por favor, instala MetaMask para usar esta aplicación.' : 'Please install MetaMask to use this application.')
     }
   }
 
-  // Desconectar wallet
+  // Desconectar wallet - olvidar completamente
   const disconnectWallet = () => {
     setAccount(null)
     setProvider(null)
@@ -275,6 +285,47 @@ function App() {
     if (window.ethereum) {
       window.ethereum.removeAllListeners('chainChanged')
       window.ethereum.removeAllListeners('accountsChanged')
+    }
+    
+    // Limpiar cualquier dato guardado relacionado con la wallet
+    // No guardamos nada en localStorage, pero si hubiera algo, se limpiaría aquí
+  }
+
+  // Cambiar de wallet en MetaMask
+  const switchWallet = async () => {
+    if (typeof window.ethereum === 'undefined') {
+      alert(language === 'es' ? 'MetaMask no está instalado.' : 'MetaMask is not installed.')
+      return
+    }
+
+    try {
+      setIsConnecting(true)
+      
+      // Solicitar permisos nuevamente para permitir cambiar de cuenta
+      await window.ethereum.request({
+        method: 'wallet_requestPermissions',
+        params: [{ eth_accounts: {} }]
+      })
+      
+      // Después de cambiar, reconectar con la nueva cuenta
+      const provider = new ethers.BrowserProvider(window.ethereum)
+      await provider.send("eth_requestAccounts", [])
+      const signer = await provider.getSigner()
+      const address = await signer.getAddress()
+      
+      // Actualizar información
+      await updateNetworkInfo(provider)
+      await loadTokenInfo(provider, selectedTokenAddress)
+      
+      setProvider(provider)
+      setAccount(address)
+    } catch (error) {
+      console.error('Error cambiando de wallet:', error)
+      if (error.code !== 4001) { // No mostrar error si el usuario cancela
+        alert(language === 'es' ? 'Error al cambiar de wallet.' : 'Error switching wallet.')
+      }
+    } finally {
+      setIsConnecting(false)
     }
   }
 
@@ -547,7 +598,19 @@ function App() {
                   {language === 'es' ? 'Cambiar a Polygon' : 'Switch to Polygon'}
                 </button>
               )}
-              <button onClick={disconnectWallet} className="btn btn-secondary btn-inline">
+              <button 
+                onClick={switchWallet} 
+                className="btn btn-secondary btn-inline"
+                title={language === 'es' ? 'Cambiar de wallet en MetaMask' : 'Switch wallet in MetaMask'}
+                disabled={isConnecting}
+              >
+                {language === 'es' ? 'Cambiar Wallet' : 'Switch Wallet'}
+              </button>
+              <button 
+                onClick={disconnectWallet} 
+                className="btn btn-secondary btn-inline"
+                title={language === 'es' ? 'Desconectar y olvidar wallet' : 'Disconnect and forget wallet'}
+              >
                 {language === 'es' ? 'Desconectar' : 'Disconnect'}
               </button>
             </>
