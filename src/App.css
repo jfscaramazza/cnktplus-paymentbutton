@@ -703,6 +703,10 @@
   text-align: center;
   font-weight: 600;
   font-size: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .status-message.success {
@@ -821,6 +825,30 @@
 .create-button-link-text:hover {
   color: #334155;
   text-decoration: underline;
+}
+
+.tx-link {
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-decoration: underline;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tx-link:hover {
+  opacity: 0.8;
+  text-decoration: none;
+}
+
+.status-message.success .tx-link {
+  color: #065f46;
+}
+
+.status-message.error .tx-link {
+  color: #dc2626;
 }
 
 .link-hint {

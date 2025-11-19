@@ -26,6 +26,7 @@ function PaymentButton({
   const [buttonTokenSymbol, setButtonTokenSymbol] = useState(tokenSymbol || '')
   const [balance, setBalance] = useState(null)
   const [isLoadingBalance, setIsLoadingBalance] = useState(false)
+  const [txHash, setTxHash] = useState(null)
 
   // Efecto de confetti cuando se confirma el pago
   useEffect(() => {
@@ -157,6 +158,7 @@ function PaymentButton({
     try {
       setIsProcessing(true)
       setStatus('')
+      setTxHash(null)
 
       const signer = await provider.getSigner()
       
@@ -190,6 +192,10 @@ function PaymentButton({
         tx = await tokenContract.transfer(recipientAddress, amountInWei)
       }
       
+      // Guardar hash de la transacción
+      const transactionHash = tx.hash
+      setTxHash(transactionHash)
+      
       // Esperar confirmación
       await tx.wait()
       
@@ -206,10 +212,11 @@ function PaymentButton({
       
       setStatus(language === 'es' ? 'Pago realizado' : 'Payment successful')
       
-      // Limpiar el estado después de 3 segundos
+      // Limpiar el estado después de 5 segundos (más tiempo para ver el link)
       setTimeout(() => {
         setStatus('')
-      }, 3000)
+        setTxHash(null)
+      }, 5000)
 
     } catch (error) {
       console.error('Error en el pago:', error)
@@ -367,9 +374,21 @@ function PaymentButton({
       )}
 
       {status && (
-        <p className={`status-message ${(status === 'Pago realizado' || status === 'Payment successful') ? 'success' : 'error'}`}>
-          {status}
-        </p>
+        <div className={`status-message ${(status === 'Pago realizado' || status === 'Payment successful') ? 'success' : 'error'}`}>
+          <p style={{ margin: 0, marginBottom: txHash ? '0.5rem' : 0 }}>
+            {status}
+          </p>
+          {txHash && (status === 'Pago realizado' || status === 'Payment successful') && (
+            <a 
+              href={`https://polygonscan.com/tx/${txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="tx-link"
+            >
+              {language === 'es' ? 'Ver en Polygonscan' : 'View on Polygonscan'} ↗
+            </a>
+          )}
+        </div>
       )}
 
       {!account && (
