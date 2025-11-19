@@ -90,7 +90,7 @@ function App() {
   const [isPaymentLink, setIsPaymentLink] = useState(false)
   const isInitialLoad = useRef(true)
   const [language, setLanguage] = useState(() => {
-    const saved = localStorage.getItem('cnktplus-pay-language')
+    const saved = localStorage.getItem('defipago-language')
     return saved || 'es'
   })
   const [removeStatus, setRemoveStatus] = useState({ id: null, status: null })
@@ -99,11 +99,11 @@ function App() {
   // Cargar información del token
   const loadTokenInfo = async (provider, tokenAddress = selectedTokenAddress) => {
     if (!provider) return
-    
+
     try {
       setIsLoadingToken(true)
       const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider)
-      
+
       // Intentar obtener symbol y name, con fallback para POL que es nativo
       let symbol, name
       try {
@@ -120,7 +120,7 @@ function App() {
           throw error
         }
       }
-      
+
       setTokenSymbol(symbol)
       setTokenName(name)
     } catch (error) {
@@ -154,13 +154,13 @@ function App() {
   const toggleLanguage = () => {
     const newLanguage = language === 'es' ? 'en' : 'es'
     setLanguage(newLanguage)
-    localStorage.setItem('cnktplus-pay-language', newLanguage)
+    localStorage.setItem('defipago-language', newLanguage)
   }
 
   // Detectar y actualizar información de red
   const updateNetworkInfo = async (provider) => {
     if (!provider) return
-    
+
     try {
       const network = await provider.getNetwork()
       const chainId = Number(network.chainId)
@@ -187,7 +187,7 @@ function App() {
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: POLYGON_MAINNET.chainId }],
       })
-      
+
       // Actualizar información después del cambio
       if (provider) {
         await updateNetworkInfo(provider)
@@ -224,26 +224,26 @@ function App() {
     if (typeof window.ethereum !== 'undefined') {
       try {
         setIsConnecting(true)
-        
+
         // Remover listeners anteriores si existen
         if (window.ethereum) {
           window.ethereum.removeAllListeners('chainChanged')
           window.ethereum.removeAllListeners('accountsChanged')
         }
-        
+
         const provider = new ethers.BrowserProvider(window.ethereum)
-        
+
         // Solicitar acceso a la cuenta (siempre pide verificación)
         await provider.send("eth_requestAccounts", [])
         const signer = await provider.getSigner()
         const address = await signer.getAddress()
-        
+
         // Actualizar información de red
         await updateNetworkInfo(provider)
-        
+
         // Cargar información del token
         await loadTokenInfo(provider, selectedTokenAddress)
-        
+
         setProvider(provider)
         setAccount(address)
 
@@ -291,13 +291,13 @@ function App() {
     setCurrentNetwork(null)
     setTokenSymbol('')
     setTokenName('')
-    
+
     // Remover listeners
     if (window.ethereum) {
       window.ethereum.removeAllListeners('chainChanged')
       window.ethereum.removeAllListeners('accountsChanged')
     }
-    
+
     // Limpiar cualquier dato guardado relacionado con la wallet
     // No guardamos nada en localStorage, pero si hubiera algo, se limpiaría aquí
   }
@@ -311,23 +311,23 @@ function App() {
 
     try {
       setIsConnecting(true)
-      
+
       // Solicitar permisos nuevamente para permitir cambiar de cuenta
       await window.ethereum.request({
         method: 'wallet_requestPermissions',
         params: [{ eth_accounts: {} }]
       })
-      
+
       // Después de cambiar, reconectar con la nueva cuenta
       const provider = new ethers.BrowserProvider(window.ethereum)
       await provider.send("eth_requestAccounts", [])
       const signer = await provider.getSigner()
       const address = await signer.getAddress()
-      
+
       // Actualizar información
       await updateNetworkInfo(provider)
       await loadTokenInfo(provider, selectedTokenAddress)
-      
+
       setProvider(provider)
       setAccount(address)
     } catch (error) {
@@ -408,8 +408,8 @@ function App() {
       }
 
       // Retornar link corto (asegurar que tenga / antes del ID)
-      const basePath = window.location.pathname.endsWith('/') 
-        ? window.location.pathname 
+      const basePath = window.location.pathname.endsWith('/')
+        ? window.location.pathname
         : window.location.pathname + '/'
       return `${window.location.origin}${basePath}${shortId}`
     } catch (error) {
@@ -431,7 +431,7 @@ function App() {
   const loadButtonFromURL = async () => {
     const pathname = window.location.pathname
     const urlParams = new URLSearchParams(window.location.search)
-    
+
     // Verificar si es un link corto (6 caracteres alfanuméricos al final del pathname)
     const pathSegments = pathname.split('/').filter(Boolean)
     const lastSegment = pathSegments[pathSegments.length - 1]
@@ -449,20 +449,20 @@ function App() {
         if (!error && data) {
           // Establecer modo de link compartido
           setIsPaymentLink(true)
-          
+
           const recipientAddress = data.recipient_address
           const amount = data.amount
           const concept = data.concept || ''
           const buttonText = data.button_text || 'Pagar'
           const buttonColor = `#${data.button_color || '6366f1'}`
           const tokenAddress = data.token_address || selectedTokenAddress
-          
+
           if (recipientAddress && amount && ethers.isAddress(recipientAddress)) {
             // Cambiar al token del link si es diferente
             if (tokenAddress.toLowerCase() !== selectedTokenAddress.toLowerCase()) {
               setSelectedTokenAddress(tokenAddress)
             }
-            
+
             const buttonId = Date.now()
             const buttonData = {
               id: buttonId,
@@ -475,7 +475,7 @@ function App() {
               paymentLink: window.location.href
             }
             setButtons([buttonData])
-            
+
             // Cargar información del token si hay provider
             if (provider) {
               loadTokenInfo(provider, tokenAddress)
@@ -497,16 +497,16 @@ function App() {
       const buttonText = urlParams.get('text') || 'Pagar'
       const buttonColor = `#${urlParams.get('color') || '6366f1'}`
       const tokenAddress = urlParams.get('token') || selectedTokenAddress
-      
+
       if (recipientAddress && amount && ethers.isAddress(recipientAddress)) {
         // Establecer modo de link compartido
         setIsPaymentLink(true)
-        
+
         // Cambiar al token del link si es diferente
         if (tokenAddress.toLowerCase() !== selectedTokenAddress.toLowerCase()) {
           setSelectedTokenAddress(tokenAddress)
         }
-        
+
         const buttonId = Date.now()
         const buttonData = {
           id: buttonId,
@@ -519,7 +519,7 @@ function App() {
           paymentLink: window.location.href
         }
         setButtons([buttonData])
-        
+
         // Cargar información del token si hay provider
         if (provider) {
           loadTokenInfo(provider, tokenAddress)
@@ -539,7 +539,7 @@ function App() {
   // Guardar botones en localStorage
   const saveButtonsToStorage = (buttonsToSave) => {
     try {
-      localStorage.setItem('cnktplus-pay-buttons', JSON.stringify(buttonsToSave))
+      localStorage.setItem('defipago-buttons', JSON.stringify(buttonsToSave))
     } catch (error) {
       console.error('Error guardando botones en localStorage:', error)
     }
@@ -548,7 +548,7 @@ function App() {
   // Cargar botones desde localStorage
   const loadButtonsFromStorage = () => {
     try {
-      const savedButtons = localStorage.getItem('cnktplus-pay-buttons')
+      const savedButtons = localStorage.getItem('defipago-buttons')
       if (savedButtons) {
         const parsedButtons = JSON.parse(savedButtons)
         setButtons(parsedButtons)
@@ -562,7 +562,7 @@ function App() {
   const clearStorage = () => {
     try {
       if (window.confirm(language === 'es' ? '¿Estás seguro de que deseas borrar todos los botones guardados?' : 'Are you sure you want to clear all saved buttons?')) {
-        localStorage.removeItem('cnktplus-pay-buttons')
+        localStorage.removeItem('defipago-buttons')
         setButtons([])
         setClearStorageStatus('success')
         setTimeout(() => setClearStorageStatus(null), 2000)
@@ -582,11 +582,11 @@ function App() {
       tokenAddress: selectedTokenAddress, // Asegurar que se guarde el token seleccionado
       paymentLink: '' // Se generará asíncronamente
     }
-    
+
     // Generar link de pago (puede ser asíncrono si usa Supabase)
     const paymentLink = await generatePaymentLink({ ...buttonData, tokenAddress: selectedTokenAddress })
     fullButtonData.paymentLink = paymentLink
-    
+
     const newButtons = [...buttons, fullButtonData]
     setButtons(newButtons)
     saveButtonsToStorage(newButtons)
@@ -628,25 +628,25 @@ function App() {
     const paymentButton = buttons[0]
     return (
       <div className="app payment-link-view">
-        <button 
+        <button
           onClick={toggleLanguage}
           className="btn-language-fixed"
           title={language === 'es' ? 'Switch to English' : 'Cambiar a Español'}
         >
           {language === 'es' ? 'EN' : 'ES'}
         </button>
-        
+
         <div className="payment-card">
           <div className="payment-card-header">
-            <h2>CNKT+ PAY</h2>
+            <h2>DEFIPAGO</h2>
             {account ? (
               <div className="payment-card-wallet">
                 <span className="wallet-address-small">
                   {account.slice(0, 6)}...{account.slice(-4)}
                 </span>
                 {currentNetwork && !currentNetwork.isPolygon && (
-                  <button 
-                    onClick={switchToPolygon} 
+                  <button
+                    onClick={switchToPolygon}
                     className="btn btn-switch-network-small"
                   >
                     Cambiar a Polygon
@@ -654,8 +654,8 @@ function App() {
                 )}
               </div>
             ) : (
-              <button 
-                onClick={connectWallet} 
+              <button
+                onClick={connectWallet}
                 className="btn btn-primary btn-small"
                 disabled={isConnecting}
               >
@@ -663,7 +663,7 @@ function App() {
               </button>
             )}
           </div>
-          
+
           <PaymentButton
             {...paymentButton}
             tokenAddress={paymentButton.tokenAddress || selectedTokenAddress}
@@ -684,18 +684,18 @@ function App() {
   // Vista completa (generador de botones)
   return (
     <div className="app">
-      <button 
+      <button
         onClick={toggleLanguage}
         className="btn-language-fixed"
         title={language === 'es' ? 'Switch to English' : 'Cambiar a Español'}
       >
         {language === 'es' ? 'EN' : 'ES'}
       </button>
-      
+
       <header className="header">
-        <h1>CNKT+ PAY</h1>
+        <h1>DEFIPAGO</h1>
         <p className="subtitle">{language === 'es' ? 'Generador de Botones de Pago DeFi' : 'DeFi Payment Button Generator'}</p>
-        
+
         <div className="header-info-line">
           <div className="token-selector-inline">
             <label htmlFor="token-select" className="token-select-label-inline">
@@ -715,7 +715,7 @@ function App() {
               ))}
             </select>
             {tokenSymbol && (
-              <a 
+              <a
                 href={`https://polygonscan.com/token/${selectedTokenAddress}`}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -740,24 +740,24 @@ function App() {
                 {account.slice(0, 6)}...{account.slice(-4)}
               </span>
               {currentNetwork && !currentNetwork.isPolygon && (
-                <button 
-                  onClick={switchToPolygon} 
+                <button
+                  onClick={switchToPolygon}
                   className="btn btn-switch-network btn-inline"
                   title={language === 'es' ? 'Cambiar a Polygon Mainnet' : 'Switch to Polygon Mainnet'}
                 >
                   {language === 'es' ? 'Cambiar a Polygon' : 'Switch to Polygon'}
                 </button>
               )}
-              <button 
-                onClick={switchWallet} 
+              <button
+                onClick={switchWallet}
                 className="btn btn-secondary btn-inline"
                 title={language === 'es' ? 'Cambiar de wallet en MetaMask' : 'Switch wallet in MetaMask'}
                 disabled={isConnecting}
               >
                 {language === 'es' ? 'Cambiar Wallet' : 'Switch Wallet'}
               </button>
-              <button 
-                onClick={disconnectWallet} 
+              <button
+                onClick={disconnectWallet}
                 className="btn btn-secondary btn-inline"
                 title={language === 'es' ? 'Desconectar y olvidar wallet' : 'Disconnect and forget wallet'}
               >
@@ -765,12 +765,12 @@ function App() {
               </button>
             </>
           ) : (
-            <button 
-              onClick={connectWallet} 
+            <button
+              onClick={connectWallet}
               className="btn btn-primary btn-inline"
               disabled={isConnecting}
             >
-              {isConnecting 
+              {isConnecting
                 ? (language === 'es' ? 'Conectando...' : 'Connecting...')
                 : (language === 'es' ? 'Conectar Wallet' : 'Connect Wallet')
               }
@@ -780,7 +780,7 @@ function App() {
       </header>
 
       <main className="main-content">
-        <PaymentButtonGenerator 
+        <PaymentButtonGenerator
           onGenerate={addPaymentButton}
           tokenAddress={selectedTokenAddress}
           provider={provider}
@@ -793,16 +793,16 @@ function App() {
           <section className="buttons-section">
             <div className="buttons-section-header">
               <h2>{language === 'es' ? 'Botones Generados' : 'Generated Buttons'}</h2>
-              <button 
+              <button
                 onClick={clearStorage}
                 className={`btn btn-clear-storage ${clearStorageStatus === 'success' ? 'btn-clear-storage-success' : ''} ${clearStorageStatus === 'fail' ? 'btn-clear-storage-fail' : ''}`}
                 title={language === 'es' ? 'Borrar todos los botones guardados' : 'Clear all saved buttons'}
               >
-                {clearStorageStatus === 'success' 
-                  ? 'Success' 
+                {clearStorageStatus === 'success'
+                  ? 'Success'
                   : clearStorageStatus === 'fail'
-                  ? 'Fail'
-                  : `🗑️ ${language === 'es' ? 'Borrar Memoria' : 'Clear Memory'}`
+                    ? 'Fail'
+                    : `🗑️ ${language === 'es' ? 'Borrar Memoria' : 'Clear Memory'}`
                 }
               </button>
             </div>
@@ -820,15 +820,15 @@ function App() {
                     onSwitchNetwork={switchToPolygon}
                     language={language}
                   />
-                  <button 
+                  <button
                     onClick={() => removeButton(button.id)}
                     className={`btn-remove ${removeStatus.id === button.id && removeStatus.status === 'success' ? 'btn-remove-success' : ''} ${removeStatus.id === button.id && removeStatus.status === 'fail' ? 'btn-remove-fail' : ''}`}
                   >
-                    {removeStatus.id === button.id && removeStatus.status === 'success' 
-                      ? 'Success' 
+                    {removeStatus.id === button.id && removeStatus.status === 'success'
+                      ? 'Success'
                       : removeStatus.id === button.id && removeStatus.status === 'fail'
-                      ? 'Fail'
-                      : (language === 'es' ? 'Eliminar' : 'Remove')
+                        ? 'Fail'
+                        : (language === 'es' ? 'Eliminar' : 'Remove')
                     }
                   </button>
                 </div>

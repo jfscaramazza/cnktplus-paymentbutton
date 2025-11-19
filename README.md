@@ -1,4 +1,4 @@
-# CNKT+ Pay - Generador de Botones de Pago DeFi
+# DEFIPAGO - Generador de Botones de Pago DeFi
 
 Una aplicación descentralizada (dApp) sencilla para generar botones de pago DeFi con tokens ERC-20 en la red Polygon Mainnet.
 
@@ -61,7 +61,7 @@ Para cambiar el token, edita la constante `TOKEN_ADDRESS` en `src/App.jsx`.
 ## 🏗️ Estructura del Proyecto
 
 ```
-cnktplus-pay/
+defipago/
 ├── src/
 │   ├── components/
 │   │   ├── PaymentButton.jsx

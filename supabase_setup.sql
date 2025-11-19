@@ -1,6 +1,6 @@
 -- ============================================
 -- Script de configuración para Supabase
--- CNKT+ Pay - Tabla de botones de pago
+-- DEFIPAGO - Tabla de botones de pago
 -- ============================================
 
 -- 1. Crear la tabla payment_buttons
