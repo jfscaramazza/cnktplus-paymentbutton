@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { ethers } from 'ethers'
 import PaymentButtonGenerator from './components/PaymentButtonGenerator'
 import PaymentButton from './components/PaymentButton'
+import { supabase } from './lib/supabase'
 import './App.css'
 
 // Configuración de la red Polygon Mainnet
@@ -63,6 +64,16 @@ const NETWORK_NAMES = {
   56: 'BSC Mainnet',
   43114: 'Avalanche Mainnet',
   42161: 'Arbitrum One'
+}
+
+// Generar ID único de 6 caracteres alfanuméricos
+const generateShortId = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let result = ''
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return result
 }
 
 function App() {
@@ -329,22 +340,156 @@ function App() {
     }
   }
 
-  // Generar link de pago con datos codificados
-  const generatePaymentLink = (buttonData) => {
-    const params = new URLSearchParams({
-      recipient: buttonData.recipientAddress,
-      amount: buttonData.amount,
-      concept: buttonData.concept || '',
-      text: buttonData.buttonText,
-      color: buttonData.buttonColor.replace('#', ''),
-      token: selectedTokenAddress
-    })
-    return `${window.location.origin}${window.location.pathname}?payment&${params.toString()}`
+  // Generar link de pago corto usando Supabase
+  const generatePaymentLink = async (buttonData) => {
+    // Si Supabase no está configurado, usar método antiguo con localStorage
+    if (!supabase) {
+      const params = new URLSearchParams({
+        recipient: buttonData.recipientAddress,
+        amount: buttonData.amount,
+        concept: buttonData.concept || '',
+        text: buttonData.buttonText,
+        color: buttonData.buttonColor.replace('#', ''),
+        token: selectedTokenAddress
+      })
+      return `${window.location.origin}${window.location.pathname}?payment&${params.toString()}`
+    }
+
+    try {
+      // Generar ID único de 6 caracteres
+      let shortId = generateShortId()
+      let attempts = 0
+      const maxAttempts = 10
+
+      // Verificar que el ID no exista (intentar hasta 10 veces)
+      while (attempts < maxAttempts) {
+        const { data: existing } = await supabase
+          .from('payment_buttons')
+          .select('id')
+          .eq('id', shortId)
+          .single()
+
+        if (!existing) {
+          break // ID único encontrado
+        }
+        shortId = generateShortId()
+        attempts++
+      }
+
+      if (attempts >= maxAttempts) {
+        throw new Error('No se pudo generar un ID único después de varios intentos')
+      }
+
+      // Guardar en Supabase
+      const { error } = await supabase
+        .from('payment_buttons')
+        .insert({
+          id: shortId,
+          recipient_address: buttonData.recipientAddress,
+          amount: buttonData.amount,
+          concept: buttonData.concept || '',
+          button_text: buttonData.buttonText,
+          button_color: buttonData.buttonColor.replace('#', ''),
+          token_address: selectedTokenAddress
+        })
+
+      if (error) {
+        console.error('Error guardando en Supabase:', error)
+        // Fallback al método antiguo si falla Supabase
+        const params = new URLSearchParams({
+          recipient: buttonData.recipientAddress,
+          amount: buttonData.amount,
+          concept: buttonData.concept || '',
+          text: buttonData.buttonText,
+          color: buttonData.buttonColor.replace('#', ''),
+          token: selectedTokenAddress
+        })
+        return `${window.location.origin}${window.location.pathname}?payment&${params.toString()}`
+      }
+
+      // Retornar link corto (asegurar que tenga / antes del ID)
+      const basePath = window.location.pathname.endsWith('/') 
+        ? window.location.pathname 
+        : window.location.pathname + '/'
+      return `${window.location.origin}${basePath}${shortId}`
+    } catch (error) {
+      console.error('Error generando link corto:', error)
+      // Fallback al método antiguo
+      const params = new URLSearchParams({
+        recipient: buttonData.recipientAddress,
+        amount: buttonData.amount,
+        concept: buttonData.concept || '',
+        text: buttonData.buttonText,
+        color: buttonData.buttonColor.replace('#', ''),
+        token: selectedTokenAddress
+      })
+      return `${window.location.origin}${window.location.pathname}?payment&${params.toString()}`
+    }
   }
 
-  // Cargar botón desde URL
-  const loadButtonFromURL = () => {
+  // Cargar botón desde URL (soporta links cortos de Supabase y links largos antiguos)
+  const loadButtonFromURL = async () => {
+    const pathname = window.location.pathname
     const urlParams = new URLSearchParams(window.location.search)
+    
+    // Verificar si es un link corto (6 caracteres alfanuméricos al final del pathname)
+    const pathSegments = pathname.split('/').filter(Boolean)
+    const lastSegment = pathSegments[pathSegments.length - 1]
+    const isShortLink = lastSegment && /^[A-Za-z0-9]{6}$/.test(lastSegment)
+
+    if (isShortLink && supabase) {
+      // Intentar cargar desde Supabase
+      try {
+        const { data, error } = await supabase
+          .from('payment_buttons')
+          .select('*')
+          .eq('id', lastSegment)
+          .single()
+
+        if (!error && data) {
+          // Establecer modo de link compartido
+          setIsPaymentLink(true)
+          
+          const recipientAddress = data.recipient_address
+          const amount = data.amount
+          const concept = data.concept || ''
+          const buttonText = data.button_text || 'Pagar'
+          const buttonColor = `#${data.button_color || '6366f1'}`
+          const tokenAddress = data.token_address || selectedTokenAddress
+          
+          if (recipientAddress && amount && ethers.isAddress(recipientAddress)) {
+            // Cambiar al token del link si es diferente
+            if (tokenAddress.toLowerCase() !== selectedTokenAddress.toLowerCase()) {
+              setSelectedTokenAddress(tokenAddress)
+            }
+            
+            const buttonId = Date.now()
+            const buttonData = {
+              id: buttonId,
+              recipientAddress,
+              amount,
+              concept,
+              buttonText,
+              buttonColor,
+              tokenAddress,
+              paymentLink: window.location.href
+            }
+            setButtons([buttonData])
+            
+            // Cargar información del token si hay provider
+            if (provider) {
+              loadTokenInfo(provider, tokenAddress)
+            }
+            return
+          }
+        }
+      } catch (error) {
+        console.error('Error cargando desde Supabase:', error)
+        // Continuar con el método antiguo si falla
+      }
+    }
+
+    // Método antiguo: cargar desde parámetros de URL
     if (urlParams.has('payment')) {
       const recipientAddress = urlParams.get('recipient')
       const amount = urlParams.get('amount')
@@ -429,14 +574,19 @@ function App() {
   }
 
   // Agregar un nuevo botón de pago
-  const addPaymentButton = (buttonData) => {
+  const addPaymentButton = async (buttonData) => {
     const buttonId = Date.now()
     const fullButtonData = {
       ...buttonData,
       id: buttonId,
       tokenAddress: selectedTokenAddress, // Asegurar que se guarde el token seleccionado
-      paymentLink: generatePaymentLink({ ...buttonData, tokenAddress: selectedTokenAddress })
+      paymentLink: '' // Se generará asíncronamente
     }
+    
+    // Generar link de pago (puede ser asíncrono si usa Supabase)
+    const paymentLink = await generatePaymentLink({ ...buttonData, tokenAddress: selectedTokenAddress })
+    fullButtonData.paymentLink = paymentLink
+    
     const newButtons = [...buttons, fullButtonData]
     setButtons(newButtons)
     saveButtonsToStorage(newButtons)

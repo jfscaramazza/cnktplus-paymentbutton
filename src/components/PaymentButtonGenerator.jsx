@@ -16,39 +16,45 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
     }
   }, [account]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleGenerate = (e) => {
+  const handleGenerate = async (e) => {
     e.preventDefault()
-    
+
     if (!recipientAddress || !ethers.isAddress(recipientAddress)) {
-      alert('Por favor, ingresa una dirección de wallet válida.')
+      alert(language === 'es' ? 'Por favor, ingresa una dirección de wallet válida.' : 'Please enter a valid wallet address.')
       return
     }
 
     if (!amount || parseFloat(amount) <= 0) {
-      alert('Por favor, ingresa un monto válido.')
+      alert(language === 'es' ? 'Por favor, ingresa un monto válido.' : 'Please enter a valid amount.')
       return
     }
 
     setIsGenerating(true)
-    
-    const buttonData = {
-      recipientAddress,
-      amount,
-      concept,
-      buttonText,
-      buttonColor,
-      tokenAddress
-    }
 
-    onGenerate(buttonData)
-    
-    // Limpiar formulario
-    setRecipientAddress('')
-    setAmount('')
-    setConcept('')
-    setButtonText('Pagar')
-    setButtonColor('#6366f1')
-    setIsGenerating(false)
+    try {
+      const buttonData = {
+        recipientAddress,
+        amount,
+        concept,
+        buttonText,
+        buttonColor,
+        tokenAddress
+      }
+
+      await onGenerate(buttonData)
+
+      // Limpiar formulario solo si se generó correctamente
+      setRecipientAddress('')
+      setAmount('')
+      setConcept('')
+      setButtonText(language === 'es' ? 'Pagar' : 'Pay')
+      setButtonColor('#6366f1')
+    } catch (error) {
+      console.error('Error generando botón:', error)
+      alert(language === 'es' ? 'Error al generar el botón. Por favor, intenta de nuevo.' : 'Error generating button. Please try again.')
+    } finally {
+      setIsGenerating(false)
+    }
   }
 
   return (
@@ -120,12 +126,12 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
           />
         </div>
 
-        <button 
-          type="submit" 
+        <button
+          type="submit"
           className="btn btn-primary btn-generate"
           disabled={isGenerating}
         >
-          {isGenerating 
+          {isGenerating
             ? (language === 'es' ? 'Generando...' : 'Generating...')
             : (language === 'es' ? 'Generar Botón' : 'Generate Button')
           }

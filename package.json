@@ -8,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.83.0",
     "canvas-confetti": "^1.9.4",
     "ethers": "^6.9.0",
     "qrcode.react": "^4.2.0",
