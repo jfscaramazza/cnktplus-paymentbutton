@@ -696,86 +696,88 @@ function App() {
         <h1>DEFIPAGO</h1>
         <p className="subtitle">{language === 'es' ? 'Generador de Botones de Pago DeFi' : 'DeFi Payment Button Generator'}</p>
 
-        <div className="header-info-line">
-          <div className="token-selector-inline">
-            <label htmlFor="token-select" className="token-select-label-inline">
-              {language === 'es' ? 'Token:' : 'Token:'}
-            </label>
-            <select
-              id="token-select"
-              value={selectedTokenAddress}
-              onChange={(e) => handleTokenChange(e.target.value)}
-              className="token-select token-select-inline"
-              disabled={isLoadingToken}
-            >
-              {AVAILABLE_TOKENS.map((token) => (
-                <option key={token.address} value={token.address}>
-                  {token.name} ({token.symbol})
-                </option>
-              ))}
-            </select>
-            {tokenSymbol && (
-              <a
-                href={`https://polygonscan.com/token/${selectedTokenAddress}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="token-badge token-link token-badge-inline"
-                title="Ver en Polygonscan"
+        <div className="header-lines-wrapper">
+          <div className="header-info-line">
+            <div className="token-selector-inline">
+              <label htmlFor="token-select" className="token-select-label-inline">
+                {language === 'es' ? 'Token:' : 'Token:'}
+              </label>
+              <select
+                id="token-select"
+                value={selectedTokenAddress}
+                onChange={(e) => handleTokenChange(e.target.value)}
+                className="token-select token-select-inline"
+                disabled={isLoadingToken}
               >
-                {tokenName} ({tokenSymbol})
-              </a>
-            )}
-          </div>
-        </div>
-
-        <div className="header-wallet-line">
-          {account ? (
-            <>
-              {currentNetwork && (
-                <span className={`network-badge network-badge-inline ${currentNetwork.isPolygon ? 'polygon' : 'other'}`}>
-                  {currentNetwork.name}
-                </span>
-              )}
-              <span className="wallet-address wallet-address-inline">
-                {account.slice(0, 6)}...{account.slice(-4)}
-              </span>
-              {currentNetwork && !currentNetwork.isPolygon && (
-                <button
-                  onClick={switchToPolygon}
-                  className="btn btn-switch-network btn-inline"
-                  title={language === 'es' ? 'Cambiar a Polygon Mainnet' : 'Switch to Polygon Mainnet'}
+                {AVAILABLE_TOKENS.map((token) => (
+                  <option key={token.address} value={token.address}>
+                    {token.name} ({token.symbol})
+                  </option>
+                ))}
+              </select>
+              {tokenSymbol && (
+                <a
+                  href={`https://polygonscan.com/token/${selectedTokenAddress}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="token-badge token-link token-badge-inline"
+                  title={language === 'es' ? `Ver ${tokenName} ($${tokenSymbol}) en Polygonscan` : `View ${tokenName} ($${tokenSymbol}) on Polygonscan`}
                 >
-                  {language === 'es' ? 'Cambiar a Polygon' : 'Switch to Polygon'}
-                </button>
+                  {language === 'es' ? `Ver ${tokenName} ($${tokenSymbol}) en Polygonscan` : `View ${tokenName} ($${tokenSymbol}) on Polygonscan`}
+                </a>
               )}
+            </div>
+          </div>
+
+          <div className="header-wallet-line">
+            {account ? (
+              <>
+                {currentNetwork && (
+                  <span className={`network-badge network-badge-inline ${currentNetwork.isPolygon ? 'polygon' : 'other'}`}>
+                    {currentNetwork.name}
+                  </span>
+                )}
+                <span className="wallet-address wallet-address-inline">
+                  {account.slice(0, 6)}...{account.slice(-4)}
+                </span>
+                {currentNetwork && !currentNetwork.isPolygon && (
+                  <button
+                    onClick={switchToPolygon}
+                    className="btn btn-switch-network btn-inline"
+                    title={language === 'es' ? 'Cambiar a Polygon Mainnet' : 'Switch to Polygon Mainnet'}
+                  >
+                    {language === 'es' ? 'Cambiar a Polygon' : 'Switch to Polygon'}
+                  </button>
+                )}
+                <button
+                  onClick={switchWallet}
+                  className="btn btn-secondary btn-inline"
+                  title={language === 'es' ? 'Cambiar de wallet en MetaMask' : 'Switch wallet in MetaMask'}
+                  disabled={isConnecting}
+                >
+                  {language === 'es' ? 'Cambiar Wallet' : 'Switch Wallet'}
+                </button>
+                <button
+                  onClick={disconnectWallet}
+                  className="btn btn-secondary btn-inline"
+                  title={language === 'es' ? 'Desconectar y olvidar wallet' : 'Disconnect and forget wallet'}
+                >
+                  {language === 'es' ? 'Desconectar' : 'Disconnect'}
+                </button>
+              </>
+            ) : (
               <button
-                onClick={switchWallet}
-                className="btn btn-secondary btn-inline"
-                title={language === 'es' ? 'Cambiar de wallet en MetaMask' : 'Switch wallet in MetaMask'}
+                onClick={connectWallet}
+                className="btn btn-primary btn-inline"
                 disabled={isConnecting}
               >
-                {language === 'es' ? 'Cambiar Wallet' : 'Switch Wallet'}
+                {isConnecting
+                  ? (language === 'es' ? 'Conectando...' : 'Connecting...')
+                  : (language === 'es' ? 'Conectar Wallet' : 'Connect Wallet')
+                }
               </button>
-              <button
-                onClick={disconnectWallet}
-                className="btn btn-secondary btn-inline"
-                title={language === 'es' ? 'Desconectar y olvidar wallet' : 'Disconnect and forget wallet'}
-              >
-                {language === 'es' ? 'Desconectar' : 'Disconnect'}
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={connectWallet}
-              className="btn btn-primary btn-inline"
-              disabled={isConnecting}
-            >
-              {isConnecting
-                ? (language === 'es' ? 'Conectando...' : 'Connecting...')
-                : (language === 'es' ? 'Conectar Wallet' : 'Connect Wallet')
-              }
-            </button>
-          )}
+            )}
+          </div>
         </div>
       </header>
 
