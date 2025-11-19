@@ -4,6 +4,121 @@
   flex-direction: column;
 }
 
+/* Vista simplificada para links compartidos */
+.payment-link-view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.payment-card {
+  background: white;
+  border-radius: 16px;
+  padding: 1.5rem 2rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-width: 600px;
+  width: 100%;
+  margin: 0 auto;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.payment-card-header {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.payment-card-header h2 {
+  color: #6366f1;
+  font-size: 1.3rem;
+  margin-bottom: 0.75rem;
+  font-weight: 700;
+}
+
+.payment-card-wallet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.wallet-address-small {
+  background: #f3f4f6;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: #6366f1;
+  font-size: 0.85rem;
+}
+
+.btn-small {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+}
+
+.btn-switch-network-small {
+  padding: 0.4rem 0.8rem;
+  background: #f59e0b;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.btn-switch-network-small:hover {
+  background: #d97706;
+}
+
+.payment-button-container.compact {
+  gap: 1rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.payment-info.compact {
+  padding: 1rem;
+  font-size: 0.9rem;
+}
+
+.concept-section {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.concept-title {
+  color: #6366f1;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.5rem;
+}
+
+.concept-text {
+  color: #374151;
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+  word-break: break-word;
+}
+
+.payment-btn.compact {
+  padding: 0.875rem 1.5rem;
+  font-size: 1rem;
+  width: 100%;
+}
+
 .header {
   background: rgba(255, 255, 255, 0.95);
   padding: 2rem;
@@ -373,11 +488,22 @@
 .status-message.success {
   background: #d1fae5;
   color: #065f46;
+  border: 1px solid #10b981;
 }
 
 .status-message.error {
   background: #fee2e2;
-  color: #991b1b;
+  color: #dc2626;
+  border: 1px solid #ef4444;
+}
+
+.balance-info {
+  color: #6366f1;
+  font-weight: 500;
+}
+
+.balance-info strong {
+  color: #4f46e5;
 }
 
 .warning-text-small {

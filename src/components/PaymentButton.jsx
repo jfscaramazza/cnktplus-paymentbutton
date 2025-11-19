@@ -4,6 +4,7 @@ import { ethers } from 'ethers'
 function PaymentButton({ 
   recipientAddress, 
   amount, 
+  concept,
   buttonText, 
   buttonColor, 
   tokenAddress,
@@ -13,33 +14,70 @@ function PaymentButton({
   paymentLink,
   tokenSymbol,
   currentNetwork,
-  onSwitchNetwork
+  onSwitchNetwork,
+  isCompact = false
 }) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [status, setStatus] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
   const [buttonTokenSymbol, setButtonTokenSymbol] = useState(tokenSymbol || '')
+  const [balance, setBalance] = useState(null)
+  const [isLoadingBalance, setIsLoadingBalance] = useState(false)
 
-  // Obtener símbolo del token del botón si es diferente
+  // Obtener símbolo y balance del token del botón
   useEffect(() => {
-    const loadButtonTokenSymbol = async () => {
+    const loadButtonTokenInfo = async () => {
       if (provider && tokenAddress) {
         try {
           const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider)
-          const symbol = await tokenContract.symbol()
-          setButtonTokenSymbol(symbol)
-        } catch (error) {
-          // Si es POL (token nativo)
-          if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000001010') {
-            setButtonTokenSymbol('POL')
-          } else {
-            setButtonTokenSymbol(tokenSymbol || 'TOKEN')
+          
+          // Obtener símbolo
+          try {
+            const symbol = await tokenContract.symbol()
+            setButtonTokenSymbol(symbol)
+          } catch (error) {
+            // Si es POL (token nativo)
+            if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000001010') {
+              setButtonTokenSymbol('POL')
+            } else {
+              setButtonTokenSymbol(tokenSymbol || 'TOKEN')
+            }
           }
+          
+          // Obtener balance si hay cuenta conectada
+          if (account) {
+            setIsLoadingBalance(true)
+            try {
+              let balanceWei
+              if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000001010') {
+                // Para POL, obtener balance nativo
+                balanceWei = await provider.getBalance(account)
+              } else {
+                balanceWei = await tokenContract.balanceOf(account)
+              }
+              
+              const decimals = tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000001010' 
+                ? 18 
+                : await tokenContract.decimals()
+              
+              const balanceFormatted = ethers.formatUnits(balanceWei, decimals)
+              setBalance(parseFloat(balanceFormatted).toFixed(6))
+            } catch (error) {
+              console.error('Error cargando balance:', error)
+              setBalance(null)
+            } finally {
+              setIsLoadingBalance(false)
+            }
+          } else {
+            setBalance(null)
+          }
+        } catch (error) {
+          console.error('Error cargando información del token:', error)
         }
       }
     }
-    loadButtonTokenSymbol()
-  }, [provider, tokenAddress, ERC20_ABI, tokenSymbol])
+    loadButtonTokenInfo()
+  }, [provider, tokenAddress, ERC20_ABI, tokenSymbol, account])
 
   // Copiar link de pago
   const copyPaymentLink = async () => {
@@ -80,61 +118,101 @@ function PaymentButton({
 
     try {
       setIsProcessing(true)
-      setStatus('Iniciando transacción...')
+      setStatus('')
 
       const signer = await provider.getSigner()
-      const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer)
-
-      // Obtener decimales del token
-      const decimals = await tokenContract.decimals()
-      const amountInWei = ethers.parseUnits(amount, decimals)
+      
+      let tokenContract, decimals, amountInWei, balanceWei
+      
+      if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000001010') {
+        // POL es nativo, usar transferencia de ETH
+        decimals = 18
+        amountInWei = ethers.parseEther(amount)
+        balanceWei = await provider.getBalance(account)
+      } else {
+        tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer)
+        decimals = await tokenContract.decimals()
+        amountInWei = ethers.parseUnits(amount, decimals)
+        balanceWei = await tokenContract.balanceOf(account)
+      }
 
       // Verificar balance
-      const balance = await tokenContract.balanceOf(account)
-      if (balance < amountInWei) {
+      if (balanceWei < amountInWei) {
         throw new Error('Balance insuficiente')
       }
 
-      setStatus('Confirmando transacción en tu wallet...')
-
       // Realizar la transferencia
-      const tx = await tokenContract.transfer(recipientAddress, amountInWei)
-      
-      setStatus('Esperando confirmación...')
+      let tx
+      if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000001010') {
+        tx = await signer.sendTransaction({
+          to: recipientAddress,
+          value: amountInWei
+        })
+      } else {
+        tx = await tokenContract.transfer(recipientAddress, amountInWei)
+      }
       
       // Esperar confirmación
       await tx.wait()
       
-      setStatus('✅ Pago realizado exitosamente!')
+      // Actualizar balance después del pago
+      if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000001010') {
+        const newBalance = await provider.getBalance(account)
+        const balanceFormatted = ethers.formatEther(newBalance)
+        setBalance(parseFloat(balanceFormatted).toFixed(6))
+      } else {
+        const newBalance = await tokenContract.balanceOf(account)
+        const balanceFormatted = ethers.formatUnits(newBalance, decimals)
+        setBalance(parseFloat(balanceFormatted).toFixed(6))
+      }
       
-      // Limpiar el estado después de 5 segundos
+      setStatus('Pago realizado')
+      
+      // Limpiar el estado después de 3 segundos
       setTimeout(() => {
         setStatus('')
-      }, 5000)
+      }, 3000)
 
     } catch (error) {
       console.error('Error en el pago:', error)
       if (error.code === 4001) {
-        setStatus('❌ Transacción cancelada por el usuario')
+        setStatus('Transacción cancelada')
       } else if (error.message.includes('insuficiente')) {
-        setStatus('❌ Balance insuficiente')
+        setStatus('Balance insuficiente')
       } else {
-        setStatus('❌ Error: ' + error.message)
+        setStatus('Error en la transacción')
       }
       
       setTimeout(() => {
         setStatus('')
-      }, 5000)
+      }, 3000)
     } finally {
       setIsProcessing(false)
     }
   }
 
   return (
-    <div className="payment-button-container">
-      <div className="payment-info">
+    <div className={`payment-button-container ${isCompact ? 'compact' : ''}`}>
+      <div className={`payment-info ${isCompact ? 'compact' : ''}`}>
+        {concept && (
+          <div className="concept-section">
+            <h3 className="concept-title">Concepto</h3>
+            <p className="concept-text">{concept}</p>
+          </div>
+        )}
         <p><strong>Destinatario:</strong> {recipientAddress.slice(0, 6)}...{recipientAddress.slice(-4)}</p>
         <p><strong>Monto:</strong> {amount} {buttonTokenSymbol || tokenSymbol || 'tokens'}</p>
+        {account && (
+          <p className="balance-info">
+            <strong>Tu balance:</strong> {
+              isLoadingBalance 
+                ? 'Cargando...' 
+                : balance !== null 
+                  ? `${balance} ${buttonTokenSymbol || tokenSymbol || 'tokens'}` 
+                  : 'N/A'
+            }
+          </p>
+        )}
         {currentNetwork && !currentNetwork.isPolygon && (
           <p className="network-warning">
             ⚠️ Cambia a Polygon Mainnet para pagar
@@ -145,7 +223,7 @@ function PaymentButton({
       <button
         onClick={handlePayment}
         disabled={isProcessing || !account || (currentNetwork && !currentNetwork.isPolygon)}
-        className="payment-btn"
+        className={`payment-btn ${isCompact ? 'compact' : ''}`}
         style={{ 
           backgroundColor: buttonColor,
           opacity: (!account || isProcessing || (currentNetwork && !currentNetwork.isPolygon)) ? 0.6 : 1,
@@ -155,7 +233,7 @@ function PaymentButton({
         {isProcessing ? 'Procesando...' : buttonText}
       </button>
 
-      {paymentLink && (
+      {paymentLink && !isCompact && (
         <div className="payment-link-section">
           <div className="link-container">
             <input 
@@ -180,7 +258,7 @@ function PaymentButton({
       )}
 
       {status && (
-        <p className={`status-message ${status.includes('✅') ? 'success' : 'error'}`}>
+        <p className={`status-message ${status === 'Pago realizado' ? 'success' : 'error'}`}>
           {status}
         </p>
       )}

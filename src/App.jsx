@@ -75,6 +75,7 @@ function App() {
   const [isLoadingToken, setIsLoadingToken] = useState(false)
   const [loadedFromLink, setLoadedFromLink] = useState(false)
   const [selectedTokenAddress, setSelectedTokenAddress] = useState(DEFAULT_TOKEN_ADDRESS)
+  const [isPaymentLink, setIsPaymentLink] = useState(false)
 
   // Cargar información del token
   const loadTokenInfo = async (provider, tokenAddress = selectedTokenAddress) => {
@@ -267,6 +268,7 @@ function App() {
     const params = new URLSearchParams({
       recipient: buttonData.recipientAddress,
       amount: buttonData.amount,
+      concept: buttonData.concept || '',
       text: buttonData.buttonText,
       color: buttonData.buttonColor.replace('#', ''),
       token: selectedTokenAddress
@@ -280,11 +282,15 @@ function App() {
     if (urlParams.has('payment')) {
       const recipientAddress = urlParams.get('recipient')
       const amount = urlParams.get('amount')
+      const concept = urlParams.get('concept') || ''
       const buttonText = urlParams.get('text') || 'Pagar'
       const buttonColor = `#${urlParams.get('color') || '6366f1'}`
       const tokenAddress = urlParams.get('token') || selectedTokenAddress
       
       if (recipientAddress && amount && ethers.isAddress(recipientAddress)) {
+        // Establecer modo de link compartido
+        setIsPaymentLink(true)
+        
         // Cambiar al token del link si es diferente
         if (tokenAddress.toLowerCase() !== selectedTokenAddress.toLowerCase()) {
           setSelectedTokenAddress(tokenAddress)
@@ -295,17 +301,13 @@ function App() {
           id: buttonId,
           recipientAddress,
           amount,
+          concept,
           buttonText,
           buttonColor,
           tokenAddress,
           paymentLink: window.location.href
         }
         setButtons([buttonData])
-        setLoadedFromLink(true)
-        // Limpiar URL después de cargar
-        window.history.replaceState({}, '', window.location.pathname)
-        // Ocultar mensaje después de 5 segundos
-        setTimeout(() => setLoadedFromLink(false), 5000)
         
         // Cargar información del token si hay provider
         if (provider) {
@@ -314,6 +316,14 @@ function App() {
       }
     }
   }
+
+  // Cargar información del token cuando se conecta la wallet desde un link compartido
+  useEffect(() => {
+    if (isPaymentLink && provider && buttons.length > 0) {
+      const tokenAddress = buttons[0].tokenAddress || selectedTokenAddress
+      loadTokenInfo(provider, tokenAddress)
+    }
+  }, [provider, isPaymentLink])
 
   // Agregar un nuevo botón de pago
   const addPaymentButton = (buttonData) => {
@@ -337,6 +347,56 @@ function App() {
     setButtons(buttons.filter(btn => btn.id !== id))
   }
 
+  // Vista simplificada para links compartidos
+  if (isPaymentLink && buttons.length > 0) {
+    const paymentButton = buttons[0]
+    return (
+      <div className="app payment-link-view">
+        <div className="payment-card">
+          <div className="payment-card-header">
+            <h2>CNKT+ Pay</h2>
+            {account ? (
+              <div className="payment-card-wallet">
+                <span className="wallet-address-small">
+                  {account.slice(0, 6)}...{account.slice(-4)}
+                </span>
+                {currentNetwork && !currentNetwork.isPolygon && (
+                  <button 
+                    onClick={switchToPolygon} 
+                    className="btn btn-switch-network-small"
+                  >
+                    Cambiar a Polygon
+                  </button>
+                )}
+              </div>
+            ) : (
+              <button 
+                onClick={connectWallet} 
+                className="btn btn-primary btn-small"
+                disabled={isConnecting}
+              >
+                {isConnecting ? 'Conectando...' : 'Conectar Wallet'}
+              </button>
+            )}
+          </div>
+          
+          <PaymentButton
+            {...paymentButton}
+            tokenAddress={paymentButton.tokenAddress || selectedTokenAddress}
+            provider={provider}
+            account={account}
+            ERC20_ABI={ERC20_ABI}
+            tokenSymbol={tokenSymbol}
+            currentNetwork={currentNetwork}
+            onSwitchNetwork={switchToPolygon}
+            isCompact={true}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  // Vista completa (generador de botones)
   return (
     <div className="app">
       <header className="header">
@@ -406,12 +466,6 @@ function App() {
       </header>
 
       <main className="main-content">
-        {loadedFromLink && (
-          <div className="link-loaded-message">
-            ✅ Botón de pago cargado desde link compartido. Conecta tu wallet para realizar el pago.
-          </div>
-        )}
-        
         <PaymentButtonGenerator 
           onGenerate={addPaymentButton}
           tokenAddress={selectedTokenAddress}

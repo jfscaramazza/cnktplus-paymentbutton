@@ -4,6 +4,7 @@ import { ethers } from 'ethers'
 function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, tokenSymbol }) {
   const [recipientAddress, setRecipientAddress] = useState('')
   const [amount, setAmount] = useState('')
+  const [concept, setConcept] = useState('')
   const [buttonText, setButtonText] = useState('Pagar')
   const [buttonColor, setButtonColor] = useState('#6366f1')
   const [isGenerating, setIsGenerating] = useState(false)
@@ -31,6 +32,7 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
     const buttonData = {
       recipientAddress,
       amount,
+      concept,
       buttonText,
       buttonColor,
       tokenAddress
@@ -41,6 +43,7 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
     // Limpiar formulario
     setRecipientAddress('')
     setAmount('')
+    setConcept('')
     setButtonText('Pagar')
     setButtonColor('#6366f1')
     setIsGenerating(false)
@@ -73,6 +76,19 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
             placeholder="0.0"
             step="0.000001"
             min="0"
+            required
+            className="form-input"
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="concept">Concepto del Pago:</label>
+          <input
+            type="text"
+            id="concept"
+            value={concept}
+            onChange={(e) => setConcept(e.target.value)}
+            placeholder="Ej: Pago de servicios, Producto XYZ, etc."
             required
             className="form-input"
           />
