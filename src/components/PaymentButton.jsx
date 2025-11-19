@@ -184,13 +184,40 @@ function PaymentButton({
       // Realizar la transferencia con concepto en Input Data
       let tx
       if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000001010') {
-        // Para POL (nativo), incluir concepto en el campo data
-        // El concepto será visible en Polygonscan como Input Data
-        tx = await signer.sendTransaction({
-          to: recipientAddress,
-          value: amountInWei,
-          data: concept ? ethers.hexlify(ethers.toUtf8Bytes(concept)) : '0x'
-        })
+        // Para POL (nativo), intentar incluir concepto en el campo data
+        // Algunas cuentas (internas de MetaMask) no permiten incluir data
+        if (concept) {
+          try {
+            // Intentar enviar con concepto en data
+            tx = await signer.sendTransaction({
+              to: recipientAddress,
+              value: amountInWei,
+              data: ethers.hexlify(ethers.toUtf8Bytes(concept))
+            })
+          } catch (error) {
+            // Si falla porque la cuenta no permite data (error de MetaMask),
+            // enviar sin concepto
+            const errorMessage = error.message || error.toString() || ''
+            if (errorMessage.includes('cannot include data') || 
+                errorMessage.includes('internal accounts') ||
+                error.code === -32602) {
+              console.warn('La cuenta de destino no permite incluir data, enviando sin concepto')
+              tx = await signer.sendTransaction({
+                to: recipientAddress,
+                value: amountInWei
+              })
+            } else {
+              // Si es otro error, relanzarlo
+              throw error
+            }
+          }
+        } else {
+          // Sin concepto, enviar sin data
+          tx = await signer.sendTransaction({
+            to: recipientAddress,
+            value: amountInWei
+          })
+        }
       } else {
         // Para tokens ERC-20, incluir concepto en Input Data
         // Construir el calldata de transfer y agregar el concepto como datos adicionales
