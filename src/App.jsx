@@ -95,6 +95,14 @@ function App() {
   })
   const [removeStatus, setRemoveStatus] = useState({ id: null, status: null })
   const [clearStorageStatus, setClearStorageStatus] = useState(null)
+  const [historyTab, setHistoryTab] = useState('active') // 'active' o 'deleted'
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(9) // 9, 18, 27, 54 o custom
+  const [customPageSize, setCustomPageSize] = useState('')
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [deletedButtons, setDeletedButtons] = useState([])
+  const [totalActiveButtons, setTotalActiveButtons] = useState(0)
+  const [totalDeletedButtons, setTotalDeletedButtons] = useState(0)
 
   // Cargar información del token
   const loadTokenInfo = async (provider, tokenAddress = selectedTokenAddress) => {
@@ -380,12 +388,13 @@ function App() {
         throw new Error('No se pudo generar un ID único después de varios intentos')
       }
 
-      // Guardar en Supabase
+      // Guardar en Supabase (owner_address = recipient_address)
       const { error } = await supabase
         .from('payment_buttons')
         .insert({
           id: shortId,
           recipient_address: buttonData.recipientAddress,
+          owner_address: buttonData.recipientAddress, // El dueño es el recipient
           amount: buttonData.amount,
           concept: buttonData.concept || '',
           button_text: buttonData.buttonText,
@@ -585,9 +594,22 @@ function App() {
     const paymentLink = await generatePaymentLink({ ...buttonData, tokenAddress: selectedTokenAddress })
     fullButtonData.paymentLink = paymentLink
 
-    const newButtons = [...buttons, fullButtonData]
-    setButtons(newButtons)
-    saveButtonsToStorage(newButtons)
+    // Extraer shortId del link si es un link corto
+    const linkMatch = paymentLink.match(/\/([A-Za-z0-9]{6})$/)
+    if (linkMatch) {
+      fullButtonData.shortId = linkMatch[1]
+    }
+
+    // Si hay wallet conectada, recargar historial desde Supabase
+    if (account && supabase) {
+      const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
+      await loadHistoryFromSupabase(currentPage, actualPageSize, historyTab === 'deleted')
+    } else {
+      // Si no hay wallet, usar localStorage
+      const newButtons = [...buttons, fullButtonData]
+      setButtons(newButtons)
+      saveButtonsToStorage(newButtons)
+    }
   }
 
   // Cargar botón desde URL al montar el componente
@@ -595,9 +617,26 @@ function App() {
     loadButtonFromURL()
   }, [])
 
-  // Eliminar un botón
-  const removeButton = (id) => {
+  // Eliminar un botón (soft delete en Supabase)
+  const removeButton = async (id, shortId = null) => {
     try {
+      // Si tiene shortId, marcar como eliminado en Supabase
+      if (shortId && supabase && account) {
+        const { error } = await supabase
+          .from('payment_buttons')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', shortId)
+          .eq('owner_address', account.toLowerCase())
+
+        if (error) {
+          console.error('Error marcando como eliminado en Supabase:', error)
+        } else {
+          // Recargar historial después de eliminar
+          await loadHistoryFromSupabase()
+        }
+      }
+
+      // Eliminar de estado local
       const newButtons = buttons.filter(btn => btn.id !== id)
       setButtons(newButtons)
       saveButtonsToStorage(newButtons)
@@ -606,6 +645,65 @@ function App() {
     } catch (error) {
       setRemoveStatus({ id, status: 'fail' })
       setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+    }
+  }
+
+  // Cargar historial desde Supabase por owner
+  const loadHistoryFromSupabase = async (page = 1, size = pageSize, showDeleted = false) => {
+    if (!supabase || !account) return
+
+    try {
+      setIsLoadingHistory(true)
+      const ownerAddress = account.toLowerCase()
+      const actualSize = typeof size === 'number' ? size : 9
+      const from = (page - 1) * actualSize
+      const to = from + actualSize - 1
+
+      let query = supabase
+        .from('payment_buttons')
+        .select('*', { count: 'exact' })
+        .eq('owner_address', ownerAddress)
+        .order('created_at', { ascending: false })
+
+      if (showDeleted) {
+        query = query.not('deleted_at', 'is', null)
+      } else {
+        query = query.is('deleted_at', null)
+      }
+
+      const { data, error, count } = await query.range(from, to)
+
+      if (error) {
+        console.error('Error cargando historial:', error)
+        return
+      }
+
+      // Convertir datos de Supabase al formato de botones
+      const formattedButtons = (data || []).map(item => ({
+        id: Date.now() + Math.random(), // ID temporal para React
+        shortId: item.id,
+        recipientAddress: item.recipient_address,
+        amount: item.amount,
+        concept: item.concept || '',
+        buttonText: item.button_text || 'Pagar',
+        buttonColor: `#${item.button_color || '6366f1'}`,
+        tokenAddress: item.token_address,
+        paymentLink: `${window.location.origin}/${item.id}`,
+        createdAt: item.created_at,
+        deletedAt: item.deleted_at
+      }))
+
+      if (showDeleted) {
+        setDeletedButtons(formattedButtons)
+        setTotalDeletedButtons(count || 0)
+      } else {
+        setButtons(formattedButtons)
+        setTotalActiveButtons(count || 0)
+      }
+    } catch (error) {
+      console.error('Error cargando historial:', error)
+    } finally {
+      setIsLoadingHistory(false)
     }
   }
 
@@ -789,51 +887,163 @@ function App() {
           language={language}
         />
 
-        {buttons.length > 0 && (
+        {(buttons.length > 0 || deletedButtons.length > 0 || account) && (
           <section className="buttons-section">
             <div className="buttons-section-header">
-              <h2>{language === 'es' ? 'Botones Generados' : 'Generated Buttons'}</h2>
-              <button
-                onClick={clearStorage}
-                className={`btn btn-clear-storage ${clearStorageStatus === 'success' ? 'btn-clear-storage-success' : ''} ${clearStorageStatus === 'fail' ? 'btn-clear-storage-fail' : ''}`}
-                title={language === 'es' ? 'Borrar todos los botones guardados' : 'Clear all saved buttons'}
-              >
-                {clearStorageStatus === 'success'
-                  ? 'Success'
-                  : clearStorageStatus === 'fail'
-                    ? 'Fail'
-                    : `🗑️ ${language === 'es' ? 'Borrar Memoria' : 'Clear Memory'}`
+              <h2>
+                {account && supabase
+                  ? (language === 'es' ? 'Historial de Botones' : 'Button History')
+                  : (language === 'es' ? 'Botones Generados' : 'Generated Buttons')
                 }
-              </button>
-            </div>
-            <div className="buttons-grid">
-              {buttons.map(button => (
-                <div key={button.id} className="button-card">
-                  <PaymentButton
-                    {...button}
-                    tokenAddress={button.tokenAddress || selectedTokenAddress}
-                    provider={provider}
-                    account={account}
-                    ERC20_ABI={ERC20_ABI}
-                    tokenSymbol={tokenSymbol}
-                    currentNetwork={currentNetwork}
-                    onSwitchNetwork={switchToPolygon}
-                    language={language}
-                  />
+              </h2>
+              {account && supabase && (
+                <div className="history-tabs">
                   <button
-                    onClick={() => removeButton(button.id)}
-                    className={`btn-remove ${removeStatus.id === button.id && removeStatus.status === 'success' ? 'btn-remove-success' : ''} ${removeStatus.id === button.id && removeStatus.status === 'fail' ? 'btn-remove-fail' : ''}`}
+                    onClick={() => {
+                      setHistoryTab('active')
+                      setCurrentPage(1)
+                    }}
+                    className={`history-tab ${historyTab === 'active' ? 'active' : ''}`}
                   >
-                    {removeStatus.id === button.id && removeStatus.status === 'success'
-                      ? 'Success'
-                      : removeStatus.id === button.id && removeStatus.status === 'fail'
-                        ? 'Fail'
-                        : (language === 'es' ? 'Eliminar' : 'Remove')
-                    }
+                    {language === 'es' ? 'Activos' : 'Active'} ({totalActiveButtons})
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHistoryTab('deleted')
+                      setCurrentPage(1)
+                    }}
+                    className={`history-tab ${historyTab === 'deleted' ? 'active' : ''}`}
+                  >
+                    {language === 'es' ? 'Eliminados' : 'Deleted'} ({totalDeletedButtons})
                   </button>
                 </div>
-              ))}
+              )}
+              {!account && (
+                <button
+                  onClick={clearStorage}
+                  className={`btn btn-clear-storage ${clearStorageStatus === 'success' ? 'btn-clear-storage-success' : ''} ${clearStorageStatus === 'fail' ? 'btn-clear-storage-fail' : ''}`}
+                  title={language === 'es' ? 'Borrar todos los botones guardados' : 'Clear all saved buttons'}
+                >
+                  {clearStorageStatus === 'success'
+                    ? 'Success'
+                    : clearStorageStatus === 'fail'
+                      ? 'Fail'
+                      : `🗑️ ${language === 'es' ? 'Borrar Memoria' : 'Clear Memory'}`
+                  }
+                </button>
+              )}
             </div>
+
+            {/* Selector de tamaño de página */}
+            {account && supabase && (historyTab === 'active' ? buttons.length > 0 : deletedButtons.length > 0) && (
+              <div className="pagination-controls-top">
+                <label htmlFor="page-size-select" className="page-size-label">
+                  {language === 'es' ? 'Por página:' : 'Per page:'}
+                </label>
+                <select
+                  id="page-size-select"
+                  value={pageSize}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (val === 'custom') {
+                      setPageSize('custom')
+                    } else {
+                      const newSize = parseInt(val)
+                      if (newSize > 0) {
+                        setPageSize(newSize)
+                        setCurrentPage(1)
+                      }
+                    }
+                  }}
+                  className="page-size-select"
+                >
+                  <option value={9}>9</option>
+                  <option value={18}>18</option>
+                  <option value={27}>27</option>
+                  <option value={54}>54</option>
+                  <option value="custom">{language === 'es' ? 'Personalizado' : 'Custom'}</option>
+                </select>
+                {pageSize === 'custom' && (
+                  <input
+                    type="number"
+                    min="1"
+                    value={customPageSize}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setCustomPageSize(val)
+                      if (val && parseInt(val) > 0) {
+                        setPageSize(parseInt(val))
+                        setCurrentPage(1)
+                      }
+                    }}
+                    placeholder={language === 'es' ? 'Cantidad' : 'Amount'}
+                    className="custom-page-size-input"
+                  />
+                )}
+              </div>
+            )}
+
+            {isLoadingHistory ? (
+              <div className="loading-message">
+                {language === 'es' ? 'Cargando historial...' : 'Loading history...'}
+              </div>
+            ) : (
+              <>
+                <div className="buttons-grid">
+                  {(historyTab === 'active' ? buttons : deletedButtons).map(button => (
+                    <div key={button.id} className="button-card">
+                      <PaymentButton
+                        {...button}
+                        tokenAddress={button.tokenAddress || selectedTokenAddress}
+                        provider={provider}
+                        account={account}
+                        ERC20_ABI={ERC20_ABI}
+                        tokenSymbol={tokenSymbol}
+                        currentNetwork={currentNetwork}
+                        onSwitchNetwork={switchToPolygon}
+                        language={language}
+                      />
+                      {historyTab === 'active' && (
+                        <button
+                          onClick={() => removeButton(button.id, button.shortId)}
+                          className={`btn-remove ${removeStatus.id === button.id && removeStatus.status === 'success' ? 'btn-remove-success' : ''} ${removeStatus.id === button.id && removeStatus.status === 'fail' ? 'btn-remove-fail' : ''}`}
+                        >
+                          {removeStatus.id === button.id && removeStatus.status === 'success'
+                            ? 'Success'
+                            : removeStatus.id === button.id && removeStatus.status === 'fail'
+                              ? 'Fail'
+                              : (language === 'es' ? 'Eliminar' : 'Remove')
+                          }
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Paginación */}
+                {account && supabase && (
+                  <div className="pagination-controls">
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1 || isLoadingHistory}
+                      className="btn-pagination"
+                    >
+                      {language === 'es' ? '← Anterior' : '← Previous'}
+                    </button>
+                    <span className="pagination-info">
+                      {language === 'es' ? 'Página' : 'Page'} {currentPage} {language === 'es' ? 'de' : 'of'} {Math.ceil((historyTab === 'active' ? totalActiveButtons : totalDeletedButtons) / (typeof pageSize === 'number' ? pageSize : 9)) || 1}
+                    </span>
+                    <button
+                      onClick={() => setCurrentPage(prev => prev + 1)}
+                      disabled={currentPage >= Math.ceil((historyTab === 'active' ? totalActiveButtons : totalDeletedButtons) / (typeof pageSize === 'number' ? pageSize : 9)) || isLoadingHistory}
+                      className="btn-pagination"
+                    >
+                      {language === 'es' ? 'Siguiente →' : 'Next →'}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </section>
         )}
       </main>
