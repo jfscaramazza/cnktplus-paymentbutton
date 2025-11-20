@@ -10,6 +10,8 @@ function PaymentButton({
   itemName,
   itemDescription,
   itemImage,
+  itemImage2,
+  itemImage3,
   buttonText, 
   buttonColor, 
   tokenAddress,
@@ -35,6 +37,7 @@ function PaymentButton({
   const [editableAmount, setEditableAmount] = useState(amount)
   const [isConnecting, setIsConnecting] = useState(false)
   const [isImageModalOpen, setIsImageModalOpen] = useState(false)
+  const [currentImageIndex, setCurrentImageIndex] = useState(0)
   
   // Función para formatear wallet (resumida)
   const formatWallet = (address) => {
@@ -325,7 +328,33 @@ function PaymentButton({
   // Usar itemName/itemDescription si están disponibles, sino usar concept para compatibilidad
   const displayName = itemName || concept || ''
   const displayDescription = itemDescription || ''
-  const displayImage = itemImage || null
+  
+  // Crear array de imágenes disponibles (filtrar nulls)
+  const displayImages = [itemImage, itemImage2, itemImage3].filter(img => img !== null && img !== undefined && img !== '')
+  const displayImage = displayImages.length > 0 ? displayImages[0] : null
+  
+  // Resetear índice cuando se abre el modal
+  useEffect(() => {
+    if (isImageModalOpen) {
+      setCurrentImageIndex(0)
+    }
+  }, [isImageModalOpen])
+  
+  // Navegar con teclado en el lightbox
+  useEffect(() => {
+    if (!isImageModalOpen || displayImages.length <= 1) return
+    
+    const handleKeyDown = (e) => {
+      if (e.key === 'ArrowLeft') {
+        setCurrentImageIndex((prev) => (prev === 0 ? displayImages.length - 1 : prev - 1))
+      } else if (e.key === 'ArrowRight') {
+        setCurrentImageIndex((prev) => (prev === displayImages.length - 1 ? 0 : prev + 1))
+      }
+    }
+    
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isImageModalOpen, displayImages.length])
 
   return (
     <div className={`payment-button-container ${isCompact ? 'compact' : ''}`}>
@@ -347,12 +376,13 @@ function PaymentButton({
                   src={displayImage} 
                   alt={displayName || 'Item'} 
                   className="item-image item-image-clickable"
-                  onClick={() => setIsImageModalOpen(true)}
-                  title={language === 'es' ? 'Haz clic para ampliar' : 'Click to enlarge'}
+                  onClick={() => displayImages.length > 0 && setIsImageModalOpen(true)}
+                  title={displayImages.length > 0 ? (language === 'es' ? 'Haz clic para ampliar' : 'Click to enlarge') : ''}
                 />
               ) : (
                 <div className="item-image-placeholder">
-                  {language === 'es' ? 'Sin imagen' : 'No image'}
+                  <span className="placeholder-icon">📷</span>
+                  <span className="placeholder-text">{language === 'es' ? 'Sin imagen' : 'No image'}</span>
                 </div>
               )}
             </div>
@@ -371,12 +401,13 @@ function PaymentButton({
                   src={displayImage} 
                   alt={displayName || 'Item'} 
                   className="item-image item-image-clickable"
-                  onClick={() => setIsImageModalOpen(true)}
-                  title={language === 'es' ? 'Haz clic para ampliar' : 'Click to enlarge'}
+                  onClick={() => displayImages.length > 0 && setIsImageModalOpen(true)}
+                  title={displayImages.length > 0 ? (language === 'es' ? 'Haz clic para ampliar' : 'Click to enlarge') : ''}
                 />
               ) : (
                 <div className="item-image-placeholder">
-                  {language === 'es' ? 'Sin imagen' : 'No image'}
+                  <span className="placeholder-icon">📷</span>
+                  <span className="placeholder-text">{language === 'es' ? 'Sin imagen' : 'No image'}</span>
                 </div>
               )}
             </div>
@@ -618,8 +649,8 @@ function PaymentButton({
         </div>
       )}
 
-      {/* Modal Lightbox para la imagen */}
-      {isImageModalOpen && displayImage && (
+      {/* Modal Lightbox para la imagen con slider */}
+      {isImageModalOpen && displayImages.length > 0 && (
         <div className="image-lightbox-overlay" onClick={() => setIsImageModalOpen(false)}>
           <div className="image-lightbox-content" onClick={(e) => e.stopPropagation()}>
             <button 
@@ -629,11 +660,57 @@ function PaymentButton({
             >
               ×
             </button>
+            
+            {/* Botón anterior (solo si hay más de una imagen) */}
+            {displayImages.length > 1 && (
+              <button 
+                className="image-lightbox-nav image-lightbox-prev"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setCurrentImageIndex((prev) => (prev === 0 ? displayImages.length - 1 : prev - 1))
+                }}
+                aria-label={language === 'es' ? 'Imagen anterior' : 'Previous image'}
+              >
+                ‹
+              </button>
+            )}
+            
             <img 
-              src={displayImage} 
-              alt={displayName || 'Item'} 
+              src={displayImages[currentImageIndex]} 
+              alt={`${displayName || 'Item'} - ${currentImageIndex + 1}`} 
               className="image-lightbox-image"
             />
+            
+            {/* Botón siguiente (solo si hay más de una imagen) */}
+            {displayImages.length > 1 && (
+              <button 
+                className="image-lightbox-nav image-lightbox-next"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setCurrentImageIndex((prev) => (prev === displayImages.length - 1 ? 0 : prev + 1))
+                }}
+                aria-label={language === 'es' ? 'Imagen siguiente' : 'Next image'}
+              >
+                ›
+              </button>
+            )}
+            
+            {/* Indicadores de imágenes (dots) */}
+            {displayImages.length > 1 && (
+              <div className="image-lightbox-indicators">
+                {displayImages.map((_, index) => (
+                  <button
+                    key={index}
+                    className={`image-lightbox-dot ${index === currentImageIndex ? 'active' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setCurrentImageIndex(index)
+                    }}
+                    aria-label={language === 'es' ? `Ir a imagen ${index + 1}` : `Go to image ${index + 1}`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

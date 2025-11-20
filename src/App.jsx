@@ -96,12 +96,13 @@ function App() {
   const [removeStatus, setRemoveStatus] = useState({ id: null, status: null })
   const [historyTab, setHistoryTab] = useState('active') // 'active' o 'archived'
   const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState(9) // 9, 18, 27, 54 o custom
+  const [pageSize, setPageSize] = useState(3) // 3, 6, 9, 18, 36 o custom
   const [customPageSize, setCustomPageSize] = useState('')
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [archivedButtons, setArchivedButtons] = useState([])
   const [totalActiveButtons, setTotalActiveButtons] = useState(0)
   const [totalArchivedButtons, setTotalArchivedButtons] = useState(0)
+  const [editingButton, setEditingButton] = useState(null)
 
   // Cargar información del token
   const loadTokenInfo = async (provider, tokenAddress = selectedTokenAddress) => {
@@ -256,7 +257,7 @@ function App() {
 
         // Cargar historial de botones activos e inactivos cuando se conecta la wallet
         if (supabase && !isPaymentLink) {
-          const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
+          const actualPageSize = typeof pageSize === 'number' ? pageSize : 3
           // Cargar botones activos
           await loadHistoryFromSupabase(1, actualPageSize, false)
           // Cargar botones archivados
@@ -288,7 +289,7 @@ function App() {
 
             // Cargar historial de botones activos e inactivos cuando cambia la cuenta
             if (supabase && !isPaymentLink) {
-              const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
+              const actualPageSize = typeof pageSize === 'number' ? pageSize : 3
               // Cargar botones activos
               await loadHistoryFromSupabase(1, actualPageSize, false)
               // Cargar botones archivados
@@ -310,17 +311,38 @@ function App() {
   }
 
   // Desconectar wallet - olvidar completamente
-  const disconnectWallet = () => {
+  const disconnectWallet = async () => {
     setAccount(null)
     setProvider(null)
     setCurrentNetwork(null)
     setTokenSymbol('')
     setTokenName('')
 
+    // Limpiar todos los botones del historial
+    setButtons([])
+    setArchivedButtons([])
+    setTotalActiveButtons(0)
+    setTotalArchivedButtons(0)
+    setRemoveStatus({ id: null, status: null })
+    setCurrentPage(1)
+    setHistoryTab('active')
+    setIsLoadingHistory(false)
+
     // Remover listeners
     if (window.ethereum) {
       window.ethereum.removeAllListeners('chainChanged')
       window.ethereum.removeAllListeners('accountsChanged')
+      
+      // Revocar permisos para forzar confirmación en próxima conexión
+      try {
+        await window.ethereum.request({
+          method: 'wallet_revokePermissions',
+          params: [{ eth_accounts: {} }]
+        })
+      } catch (error) {
+        // Si falla la revocación, no es crítico, solo loguear
+        console.log('No se pudieron revocar permisos (puede que no haya permisos activos):', error)
+      }
     }
 
     // Limpiar cualquier dato guardado relacionado con la wallet
@@ -376,9 +398,15 @@ function App() {
         concept: buttonData.concept || '', // Mantener para compatibilidad
         itemName: buttonData.itemName || '',
         itemDescription: buttonData.itemDescription || '',
-        // Solo incluir imagen si es Base64 (data:image), no URLs de Storage
-        itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image'))
-          ? buttonData.itemImage
+        // Solo incluir imágenes si son Base64 (data:image), no URLs de Storage
+        itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image')) 
+          ? buttonData.itemImage 
+          : '',
+        itemImage2: (buttonData.itemImage2 && buttonData.itemImage2.startsWith('data:image')) 
+          ? buttonData.itemImage2 
+          : '',
+        itemImage3: (buttonData.itemImage3 && buttonData.itemImage3.startsWith('data:image')) 
+          ? buttonData.itemImage3 
           : '',
         text: buttonData.buttonText,
         color: buttonData.buttonColor.replace('#', ''),
@@ -433,11 +461,21 @@ function App() {
         concept: buttonData.concept || '', // Mantener para compatibilidad
         item_name: buttonData.itemName || '',
         item_description: buttonData.itemDescription || '',
-        item_image: buttonData.itemImage || '', // Base64 o URL
+        item_image: buttonData.itemImage || null, // Base64 o URL
+        item_image2: buttonData.itemImage2 || null, // Segunda imagen
+        item_image3: buttonData.itemImage3 || null, // Tercera imagen
         button_text: buttonData.buttonText || '',
         button_color: buttonData.buttonColor.replace('#', ''),
         token_address: selectedTokenAddress.toLowerCase()
       }
+
+      console.log('Inserting button with data:', {
+        item_name: insertData.item_name,
+        item_description: insertData.item_description?.substring(0, 50) + '...',
+        item_image: insertData.item_image ? 'URL present' : 'null',
+        item_image2: insertData.item_image2 ? 'URL present' : 'null',
+        item_image3: insertData.item_image3 ? 'URL present' : 'null'
+      })
 
       // Incluir payment_type solo si está disponible en buttonData
       // Si la columna no existe en la BD, intentar insertar sin ella
@@ -467,15 +505,17 @@ function App() {
         console.error('Datos que se intentaron guardar:', insertData)
 
         // Si el error es por payment_type o campos de item, intentar sin ellos
-        if (error.message && (error.message.includes('payment_type') ||
-          error.message.includes('item_name') ||
-          error.message.includes('item_description') ||
-          error.message.includes('item_image'))) {
+        if (error.message && (error.message.includes('payment_type') || 
+            error.message.includes('item_name') || 
+            error.message.includes('item_description') || 
+            error.message.includes('item_image'))) {
           console.warn('Algunas columnas no existen. Intentando sin ellas...')
           delete insertData.payment_type
           delete insertData.item_name
           delete insertData.item_description
           delete insertData.item_image
+          delete insertData.item_image2
+          delete insertData.item_image3
 
           const { data: retryData, error: retryError } = await supabase
             .from('payment_buttons')
@@ -506,9 +546,15 @@ function App() {
           concept: buttonData.concept || '',
           itemName: buttonData.itemName || '',
           itemDescription: buttonData.itemDescription || '',
-          // Solo incluir imagen si es Base64 (data:image), no URLs de Storage
-          itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image'))
-            ? buttonData.itemImage
+          // Solo incluir imágenes si son Base64 (data:image), no URLs de Storage
+          itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image')) 
+            ? buttonData.itemImage 
+            : '',
+          itemImage2: (buttonData.itemImage2 && buttonData.itemImage2.startsWith('data:image')) 
+            ? buttonData.itemImage2 
+            : '',
+          itemImage3: (buttonData.itemImage3 && buttonData.itemImage3.startsWith('data:image')) 
+            ? buttonData.itemImage3 
             : '',
           text: buttonData.buttonText,
           color: buttonData.buttonColor.replace('#', ''),
@@ -534,9 +580,15 @@ function App() {
         concept: buttonData.concept || '', // Mantener para compatibilidad
         itemName: buttonData.itemName || '',
         itemDescription: buttonData.itemDescription || '',
-        // Solo incluir imagen si es Base64 (data:image), no URLs de Storage
-        itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image'))
-          ? buttonData.itemImage
+        // Solo incluir imágenes si son Base64 (data:image), no URLs de Storage
+        itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image')) 
+          ? buttonData.itemImage 
+          : '',
+        itemImage2: (buttonData.itemImage2 && buttonData.itemImage2.startsWith('data:image')) 
+          ? buttonData.itemImage2 
+          : '',
+        itemImage3: (buttonData.itemImage3 && buttonData.itemImage3.startsWith('data:image')) 
+          ? buttonData.itemImage3 
           : '',
         text: buttonData.buttonText,
         color: buttonData.buttonColor.replace('#', ''),
@@ -575,6 +627,8 @@ function App() {
           const itemName = data.item_name || ''
           const itemDescription = data.item_description || ''
           const itemImage = data.item_image || ''
+          const itemImage2 = data.item_image2 || ''
+          const itemImage3 = data.item_image3 || ''
           const buttonText = data.button_text || (language === 'es' ? 'Pagar' : 'Pay')
           const buttonColor = `#${data.button_color || '6366f1'}`
           const tokenAddress = data.token_address || selectedTokenAddress
@@ -594,6 +648,8 @@ function App() {
               itemName,
               itemDescription,
               itemImage,
+              itemImage2,
+              itemImage3,
               buttonText,
               buttonColor,
               tokenAddress,
@@ -623,6 +679,8 @@ function App() {
       const itemName = urlParams.get('itemName') || ''
       const itemDescription = urlParams.get('itemDescription') || ''
       const itemImage = urlParams.get('itemImage') || ''
+      const itemImage2 = urlParams.get('itemImage2') || ''
+      const itemImage3 = urlParams.get('itemImage3') || ''
       const buttonText = urlParams.get('text') || 'Pagar'
       const buttonColor = `#${urlParams.get('color') || '6366f1'}`
       const tokenAddress = urlParams.get('token') || selectedTokenAddress
@@ -645,6 +703,8 @@ function App() {
           itemName,
           itemDescription,
           itemImage,
+          itemImage2,
+          itemImage3,
           buttonText,
           buttonColor,
           tokenAddress,
@@ -693,10 +753,172 @@ function App() {
     // Recargar historial desde Supabase si hay wallet conectada
     // Los botones siempre se guardan en Supabase, vinculados por recipient_address
     if (account && supabase) {
-      const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
+      const actualPageSize = typeof pageSize === 'number' ? pageSize : 3
       await loadHistoryFromSupabase(currentPage, actualPageSize, historyTab === 'archived')
     }
     // Si no hay wallet, el botón ya está guardado en Supabase y aparecerá cuando se conecte
+  }
+
+  // Actualizar un botón de pago existente
+  const updatePaymentButton = async (buttonData) => {
+    if (!supabase || !buttonData.shortId) {
+      alert(language === 'es' ? 'Error: No se puede actualizar el botón sin Supabase.' : 'Error: Cannot update button without Supabase.')
+      return
+    }
+
+    try {
+      const recipientLower = buttonData.recipientAddress.toLowerCase()
+      
+      const updateData = {
+        amount: String(buttonData.amount),
+        item_name: buttonData.itemName || '',
+        item_description: buttonData.itemDescription || '',
+        item_image: buttonData.itemImage || null,
+        item_image2: buttonData.itemImage2 || null,
+        item_image3: buttonData.itemImage3 || null,
+        button_text: buttonData.buttonText || '',
+        button_color: buttonData.buttonColor.replace('#', ''),
+        payment_type: buttonData.paymentType || 'fixed'
+      }
+
+      console.log('Updating button with data:', {
+        shortId: buttonData.shortId,
+        item_name: updateData.item_name,
+        item_description: updateData.item_description?.substring(0, 50) + '...',
+        item_image: updateData.item_image ? 'URL present' : 'null',
+        item_image2: updateData.item_image2 ? 'URL present' : 'null',
+        item_image3: updateData.item_image3 ? 'URL present' : 'null'
+      })
+
+      // Actualizar en Supabase
+      const { error } = await supabase
+        .from('payment_buttons')
+        .update(updateData)
+        .eq('id', buttonData.shortId)
+        .eq('owner_address', recipientLower) // Solo el dueño puede actualizar
+
+      if (error) {
+        console.error('Error actualizando botón:', error)
+        alert(language === 'es' ? 'Error al actualizar el botón. Por favor, intenta de nuevo.' : 'Error updating button. Please try again.')
+        return
+      }
+
+      // Recargar historial
+      if (account && supabase) {
+        const actualPageSize = typeof pageSize === 'number' ? pageSize : 3
+        await loadHistoryFromSupabase(currentPage, actualPageSize, historyTab === 'archived')
+      }
+
+      // Salir del modo edición y resetear formulario
+      setEditingButton(null)
+      
+      // Notificar al componente PaymentButtonGenerator para que resetee el formulario
+      // Esto se hace a través de cambiar editingButton a null, que ya está hecho arriba
+    } catch (error) {
+      console.error('Error actualizando botón:', error)
+      alert(language === 'es' ? 'Error al actualizar el botón. Por favor, intenta de nuevo.' : 'Error updating button. Please try again.')
+    }
+  }
+
+  // Cancelar edición
+  const cancelEdit = () => {
+    setEditingButton(null)
+  }
+
+  // Función para extraer el path del archivo desde una URL de Supabase Storage
+  const extractFilePathFromUrl = (url) => {
+    if (!url || !url.includes('storage/v1/object/public/payment-item-images/')) {
+      return null
+    }
+    // Extraer el path después de 'payment-item-images/'
+    // La URL tiene formato: https://xxx.supabase.co/storage/v1/object/public/payment-item-images/payment-items/filename.jpg
+    const match = url.match(/payment-item-images\/(.+)$/)
+    return match ? match[1] : null
+  }
+
+  // Eliminar botón permanentemente (con confirmación y eliminación de imágenes)
+  const deleteButton = async (id, shortId = null, buttonData = null) => {
+    // Pedir confirmación
+    const confirmMessage = language === 'es' 
+      ? '¿Estás seguro de que deseas eliminar este botón permanentemente? Esta acción no se puede deshacer y también eliminará las imágenes asociadas.'
+      : 'Are you sure you want to permanently delete this button? This action cannot be undone and will also delete associated images.'
+    
+    if (!window.confirm(confirmMessage)) {
+      return
+    }
+
+    try {
+      setRemoveStatus({ id, status: 'deleting' })
+
+      if (shortId && supabase && account) {
+        const ownerAddress = account.toLowerCase()
+
+        // Si tenemos los datos del botón, eliminar las imágenes del bucket
+        if (buttonData) {
+          const imagesToDelete = [
+            buttonData.itemImage,
+            buttonData.itemImage2,
+            buttonData.itemImage3
+          ].filter(img => img && img.includes('storage/v1/object/public/payment-item-images/'))
+
+          // Eliminar cada imagen del bucket
+          for (const imageUrl of imagesToDelete) {
+            const filePath = extractFilePathFromUrl(imageUrl)
+            if (filePath) {
+              try {
+                // El filePath ya incluye 'payment-items/filename.jpg'
+                const { error: deleteError } = await supabase.storage
+                  .from('payment-item-images')
+                  .remove([filePath])
+                
+                if (deleteError) {
+                  console.warn('Error eliminando imagen del bucket:', deleteError)
+                  // Continuar aunque falle la eliminación de una imagen
+                } else {
+                  console.log('Imagen eliminada del bucket:', filePath)
+                }
+              } catch (imgError) {
+                console.warn('Error procesando eliminación de imagen:', imgError)
+                // Continuar aunque falle
+              }
+            }
+          }
+        }
+
+        // Eliminar el botón de la base de datos (hard delete)
+        const { error } = await supabase
+          .from('payment_buttons')
+          .delete()
+          .eq('id', shortId)
+          .eq('owner_address', ownerAddress)
+
+        if (error) {
+          console.error('Error eliminando botón:', error)
+          alert(language === 'es' ? 'Error al eliminar el botón. Por favor, intenta de nuevo.' : 'Error deleting button. Please try again.')
+          setRemoveStatus({ id, status: 'fail' })
+          setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+          return
+        }
+
+        // Recargar historial
+        const actualPageSize = typeof pageSize === 'number' ? pageSize : 3
+        await loadHistoryFromSupabase(currentPage, actualPageSize, historyTab === 'archived')
+
+        setRemoveStatus({ id, status: 'success' })
+        setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+      } else {
+        // Fallback: eliminar del estado local si no hay Supabase
+        const newButtons = buttons.filter(btn => btn.id !== id)
+        setButtons(newButtons)
+        setRemoveStatus({ id, status: 'success' })
+        setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+      }
+    } catch (error) {
+      console.error('Error en deleteButton:', error)
+      alert(language === 'es' ? 'Error al eliminar el botón. Por favor, intenta de nuevo.' : 'Error deleting button. Please try again.')
+      setRemoveStatus({ id, status: 'fail' })
+      setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+    }
   }
 
   // Cargar botón desde URL al montar el componente
@@ -732,7 +954,7 @@ function App() {
         } else {
           console.log('Botón archivado exitosamente')
           // Recargar historial después de archivar
-          const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
+          const actualPageSize = typeof pageSize === 'number' ? pageSize : 3
           await loadHistoryFromSupabase(currentPage, actualPageSize, historyTab === 'archived')
         }
       }
@@ -777,7 +999,7 @@ function App() {
         } else {
           console.log('Botón desarchivado exitosamente')
           // Recargar historial después de desarchivar (tanto activos como archivados)
-          const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
+          const actualPageSize = typeof pageSize === 'number' ? pageSize : 3
           await loadHistoryFromSupabase(currentPage, actualPageSize, false) // Cargar activos
           await loadHistoryFromSupabase(currentPage, actualPageSize, true) // Cargar archivados
         }
@@ -863,6 +1085,8 @@ function App() {
         itemName: item.item_name || '',
         itemDescription: item.item_description || '',
         itemImage: item.item_image || '',
+        itemImage2: item.item_image2 || '',
+        itemImage3: item.item_image3 || '',
         buttonText: item.button_text || (language === 'es' ? 'Pagar' : 'Pay'),
         buttonColor: `#${item.button_color || '6366f1'}`,
         tokenAddress: item.token_address,
@@ -889,7 +1113,7 @@ function App() {
   // Cargar historial cuando se conecta una wallet
   useEffect(() => {
     if (account && supabase && !isPaymentLink) {
-      const actualPageSize = typeof pageSize === 'number' ? pageSize : 9
+      const actualPageSize = typeof pageSize === 'number' ? pageSize : 3
       console.log('useEffect: Cargando historial porque account cambió', { account, supabase: !!supabase, isPaymentLink })
       loadHistoryFromSupabase(currentPage, actualPageSize, historyTab === 'archived')
     }
@@ -1096,6 +1320,9 @@ function App() {
       <main className="main-content">
         <PaymentButtonGenerator
           onGenerate={addPaymentButton}
+          onUpdate={updatePaymentButton}
+          onCancel={cancelEdit}
+          editingButton={editingButton}
           tokenAddress={selectedTokenAddress}
           provider={provider}
           account={account}
@@ -1159,10 +1386,11 @@ function App() {
                   }}
                   className="page-size-select"
                 >
+                  <option value={3}>3</option>
+                  <option value={6}>6</option>
                   <option value={9}>9</option>
                   <option value={18}>18</option>
-                  <option value={27}>27</option>
-                  <option value={54}>54</option>
+                  <option value={36}>36</option>
                   <option value="custom">{language === 'es' ? 'Personalizado' : 'Custom'}</option>
                 </select>
                 {pageSize === 'custom' && (
@@ -1208,17 +1436,40 @@ function App() {
                         paymentType={button.paymentType}
                       />
                       {historyTab === 'active' && (
-                        <button
-                          onClick={() => archiveButton(button.id, button.shortId)}
-                          className={`btn-remove ${removeStatus.id === button.id && removeStatus.status === 'success' ? 'btn-remove-success' : ''} ${removeStatus.id === button.id && removeStatus.status === 'fail' ? 'btn-remove-fail' : ''}`}
-                        >
-                          {removeStatus.id === button.id && removeStatus.status === 'success'
-                            ? (language === 'es' ? '✓ Archivado' : '✓ Archived')
-                            : removeStatus.id === button.id && removeStatus.status === 'fail'
-                              ? (language === 'es' ? '✗ Error' : '✗ Error')
-                              : (language === 'es' ? 'Archivar' : 'Archive')
-                          }
-                        </button>
+                        <>
+                          <button
+                            onClick={() => setEditingButton(button)}
+                            className="btn-edit"
+                            title={language === 'es' ? 'Editar botón' : 'Edit button'}
+                          >
+                            {language === 'es' ? '✏️ Editar' : '✏️ Edit'}
+                          </button>
+                          <button
+                            onClick={() => archiveButton(button.id, button.shortId)}
+                            className={`btn-remove ${removeStatus.id === button.id && removeStatus.status === 'success' ? 'btn-remove-success' : ''} ${removeStatus.id === button.id && removeStatus.status === 'fail' ? 'btn-remove-fail' : ''}`}
+                          >
+                            {removeStatus.id === button.id && removeStatus.status === 'success'
+                              ? (language === 'es' ? '✓ Archivado' : '✓ Archived')
+                              : removeStatus.id === button.id && removeStatus.status === 'fail'
+                                ? (language === 'es' ? '✗ Error' : '✗ Error')
+                                : (language === 'es' ? 'Archivar' : 'Archive')
+                            }
+                          </button>
+                          <button
+                            onClick={() => deleteButton(button.id, button.shortId, button)}
+                            className={`btn-delete ${removeStatus.id === button.id && removeStatus.status === 'deleting' ? 'btn-deleting' : ''} ${removeStatus.id === button.id && removeStatus.status === 'success' ? 'btn-delete-success' : ''} ${removeStatus.id === button.id && removeStatus.status === 'fail' ? 'btn-delete-fail' : ''}`}
+                            title={language === 'es' ? 'Eliminar botón permanentemente' : 'Permanently delete button'}
+                          >
+                            {removeStatus.id === button.id && removeStatus.status === 'deleting'
+                              ? (language === 'es' ? '🗑️ Eliminando...' : '🗑️ Deleting...')
+                              : removeStatus.id === button.id && removeStatus.status === 'success'
+                                ? (language === 'es' ? '✓ Eliminado' : '✓ Deleted')
+                                : removeStatus.id === button.id && removeStatus.status === 'fail'
+                                  ? (language === 'es' ? '✗ Error' : '✗ Error')
+                                  : (language === 'es' ? '🗑️ Eliminar' : '🗑️ Delete')
+                            }
+                          </button>
+                        </>
                       )}
                       {historyTab === 'archived' && (
                         <button
@@ -1248,11 +1499,11 @@ function App() {
                       {language === 'es' ? '← Anterior' : '← Previous'}
                     </button>
                     <span className="pagination-info">
-                      {language === 'es' ? 'Página' : 'Page'} {currentPage} {language === 'es' ? 'de' : 'of'} {Math.ceil((historyTab === 'active' ? totalActiveButtons : totalArchivedButtons) / (typeof pageSize === 'number' ? pageSize : 9)) || 1}
+                      {language === 'es' ? 'Página' : 'Page'} {currentPage} {language === 'es' ? 'de' : 'of'} {Math.ceil((historyTab === 'active' ? totalActiveButtons : totalArchivedButtons) / (typeof pageSize === 'number' ? pageSize : 3)) || 1}
                     </span>
                     <button
                       onClick={() => setCurrentPage(prev => prev + 1)}
-                      disabled={currentPage >= Math.ceil((historyTab === 'active' ? totalActiveButtons : totalArchivedButtons) / (typeof pageSize === 'number' ? pageSize : 9)) || isLoadingHistory}
+                      disabled={currentPage >= Math.ceil((historyTab === 'active' ? totalActiveButtons : totalArchivedButtons) / (typeof pageSize === 'number' ? pageSize : 3)) || isLoadingHistory}
                       className="btn-pagination"
                     >
                       {language === 'es' ? 'Siguiente →' : 'Next →'}
