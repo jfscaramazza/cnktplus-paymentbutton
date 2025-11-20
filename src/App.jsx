@@ -825,6 +825,23 @@ function App() {
     setEditingButton(null)
   }
 
+  // Duplicar un botón (cargar sus datos en el formulario para crear uno nuevo)
+  const duplicateButton = (button) => {
+    // Crear un objeto con los datos del botón pero sin shortId (para que se cree uno nuevo)
+    const duplicatedButton = {
+      ...button,
+      shortId: undefined // No incluir shortId para que se genere uno nuevo
+    }
+    setEditingButton(duplicatedButton)
+    // Scroll al formulario para que el usuario vea los datos
+    setTimeout(() => {
+      const generatorSection = document.querySelector('.generator-section')
+      if (generatorSection) {
+        generatorSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }, 100)
+  }
+
   // Función para extraer el path del archivo desde una URL de Supabase Storage
   const extractFilePathFromUrl = (url) => {
     if (!url || !url.includes('storage/v1/object/public/payment-item-images/')) {
@@ -1443,6 +1460,13 @@ function App() {
                             title={language === 'es' ? 'Editar botón' : 'Edit button'}
                           >
                             {language === 'es' ? '✏️ Editar' : '✏️ Edit'}
+                          </button>
+                          <button
+                            onClick={() => duplicateButton(button)}
+                            className="btn-duplicate"
+                            title={language === 'es' ? 'Duplicar botón' : 'Duplicate button'}
+                          >
+                            {language === 'es' ? '📋 Duplicar' : '📋 Duplicate'}
                           </button>
                           <button
                             onClick={() => archiveButton(button.id, button.shortId)}

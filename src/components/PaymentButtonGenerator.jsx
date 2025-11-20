@@ -41,9 +41,9 @@ function PaymentButtonGenerator({
   const isEditing = !!editingButton
   const prevEditingButtonRef = useRef(editingButton)
 
-  // Función para limpiar formulario
+  // Función para limpiar formulario (sin resetear recipientAddress)
   const clearForm = () => {
-    setRecipientAddress(account || '')
+    // NO resetear recipientAddress - mantener el valor actual
     setAmount('')
     setItemName('')
     setItemDescription('')
@@ -61,14 +61,35 @@ function PaymentButtonGenerator({
     setPaymentType('fixed')
   }
 
-  // Limpiar formulario cuando se sale del modo edición
+  // Limpiar formulario cuando se sale del modo edición (preservando recipientAddress)
   useEffect(() => {
     // Si había un botón en edición y ahora no hay, limpiar formulario
     if (prevEditingButtonRef.current && !editingButton) {
-      clearForm()
+      // Guardar el recipientAddress actual antes de limpiar
+      const currentRecipient = recipientAddress
+      // Limpiar todos los campos excepto recipientAddress
+      setAmount('')
+      setItemName('')
+      setItemDescription('')
+      setItemImage(null)
+      setItemImage2(null)
+      setItemImage3(null)
+      setItemImagePreview(null)
+      setItemImagePreview2(null)
+      setItemImagePreview3(null)
+      setItemImageUrl(null)
+      setItemImageUrl2(null)
+      setItemImageUrl3(null)
+      setButtonText(language === 'es' ? 'Pagar' : 'Pay')
+      setButtonColor('#6366f1')
+      setPaymentType('fixed')
+      // Asegurar que recipientAddress se mantiene
+      if (currentRecipient) {
+        setRecipientAddress(currentRecipient)
+      }
     }
     prevEditingButtonRef.current = editingButton
-  }, [editingButton, account, language]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [editingButton, recipientAddress, language]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cargar datos iniciales cuando está en modo edición
   useEffect(() => {
@@ -378,8 +399,15 @@ function PaymentButtonGenerator({
         itemImage3: finalImageUrl3 ? 'URL present' : 'null'
       })
 
-      if (isEditing && onUpdate) {
-        await onUpdate({ ...buttonData, shortId: editingButton.shortId })
+      // Si está en modo edición y tiene shortId, actualizar. Si no tiene shortId, crear nuevo (duplicado)
+      if (isEditing) {
+        if (editingButton.shortId && onUpdate) {
+          // Actualizar botón existente
+          await onUpdate({ ...buttonData, shortId: editingButton.shortId })
+        } else {
+          // Crear nuevo botón (duplicado)
+          await onGenerate(buttonData)
+        }
       } else {
         await onGenerate(buttonData)
       }
@@ -464,23 +492,48 @@ function PaymentButtonGenerator({
     )
   }
 
-  // Manejar cancelación de edición
+  // Manejar cancelación de edición (preservando recipientAddress)
   const handleCancel = () => {
-    clearForm()
+    // Guardar el recipientAddress actual antes de limpiar
+    const currentRecipient = recipientAddress
+    // Limpiar todos los campos excepto recipientAddress
+    setAmount('')
+    setItemName('')
+    setItemDescription('')
+    setItemImage(null)
+    setItemImage2(null)
+    setItemImage3(null)
+    setItemImagePreview(null)
+    setItemImagePreview2(null)
+    setItemImagePreview3(null)
+    setItemImageUrl(null)
+    setItemImageUrl2(null)
+    setItemImageUrl3(null)
+    setButtonText(language === 'es' ? 'Pagar' : 'Pay')
+    setButtonColor('#6366f1')
+    setPaymentType('fixed')
+    // Asegurar que recipientAddress se mantiene
+    if (currentRecipient) {
+      setRecipientAddress(currentRecipient)
+    }
     if (onCancel) {
       onCancel()
     }
   }
 
+  const isDuplicating = isEditing && !editingButton?.shortId
+
   return (
     <section className="generator-section">
       <h2>
-        {isEditing 
-          ? (language === 'es' ? 'Editar Botón de Pago' : 'Edit Payment Button')
-          : (language === 'es' ? 'Generar Botón de Pago' : 'Generate Payment Button')
+        {isDuplicating
+          ? (language === 'es' ? 'Duplicar Botón de Pago' : 'Duplicate Payment Button')
+          : isEditing 
+            ? (language === 'es' ? 'Editar Botón de Pago' : 'Edit Payment Button')
+            : (language === 'es' ? 'Generar Botón de Pago' : 'Generate Payment Button')
         }
       </h2>
-      {isEditing && onCancel && (
+      {isEditing && editingButton?.shortId && onCancel && (
         <button
           type="button"
           onClick={handleCancel}
@@ -488,6 +541,16 @@ function PaymentButtonGenerator({
           style={{ marginBottom: '1rem' }}
         >
           {language === 'es' ? 'Cancelar Edición' : 'Cancel Edit'}
+        </button>
+      )}
+      {isDuplicating && onCancel && (
+        <button
+          type="button"
+          onClick={handleCancel}
+          className="btn btn-secondary"
+          style={{ marginBottom: '1rem' }}
+        >
+          {language === 'es' ? 'Cancelar Duplicado' : 'Cancel Duplicate'}
         </button>
       )}
       <form onSubmit={handleGenerate} className="generator-form">
@@ -632,22 +695,34 @@ function PaymentButtonGenerator({
           />
         </div>
 
-        <button
-          type="submit"
-          className="btn btn-primary btn-generate"
-          disabled={isGenerating || isUploading}
-        >
-          {isGenerating
-            ? (isEditing 
-                ? (language === 'es' ? 'Actualizando...' : 'Updating...')
-                : (language === 'es' ? 'Generando...' : 'Generating...')
+        <div className="form-actions">
+          <button
+            type="button"
+            onClick={clearForm}
+            className="btn btn-secondary btn-reset"
+            disabled={isGenerating || isUploading}
+          >
+            {language === 'es' ? 'Resetear' : 'Reset'}
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary btn-generate"
+            disabled={isGenerating || isUploading}
+          >
+            {isGenerating
+              ? (isEditing 
+                  ? (language === 'es' ? 'Actualizando...' : 'Updating...')
+                  : (language === 'es' ? 'Generando...' : 'Generating...')
+                )
+            : (isDuplicating
+                ? (language === 'es' ? 'Crear Duplicado' : 'Create Duplicate')
+                : isEditing
+                  ? (language === 'es' ? 'Actualizar Botón' : 'Update Button')
+                  : (language === 'es' ? 'Generar Botón' : 'Generate Button')
               )
-            : (isEditing
-                ? (language === 'es' ? 'Actualizar Botón' : 'Update Button')
-                : (language === 'es' ? 'Generar Botón' : 'Generate Button')
-              )
-          }
-        </button>
+            }
+          </button>
+        </div>
       </form>
     </section>
   )
