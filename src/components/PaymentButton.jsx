@@ -6,7 +6,10 @@ import confetti from 'canvas-confetti'
 function PaymentButton({ 
   recipientAddress, 
   amount, 
-  concept,
+  concept, // Mantener para compatibilidad con links antiguos
+  itemName,
+  itemDescription,
+  itemImage,
   buttonText, 
   buttonColor, 
   tokenAddress,
@@ -17,6 +20,7 @@ function PaymentButton({
   tokenSymbol,
   currentNetwork,
   onSwitchNetwork,
+  onConnectWallet,
   isCompact = false,
   language = 'es',
   paymentType = 'fixed' // 'fixed' o 'editable'
@@ -29,6 +33,37 @@ function PaymentButton({
   const [isLoadingBalance, setIsLoadingBalance] = useState(false)
   const [txHash, setTxHash] = useState(null)
   const [editableAmount, setEditableAmount] = useState(amount)
+  const [isConnecting, setIsConnecting] = useState(false)
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false)
+  
+  // Función para formatear wallet (resumida)
+  const formatWallet = (address) => {
+    if (!address) return ''
+    return `${address.slice(0, 6)}...${address.slice(-4)}`
+  }
+  
+  // Función para formatear balance con 6 decimales
+  const formatBalance = (balance) => {
+    if (!balance || balance === 'N/A') return balance
+    const num = parseFloat(balance)
+    if (isNaN(num)) return balance
+    return num.toFixed(6)
+  }
+  
+  // Función para formatear precio con separador de miles
+  const formatPrice = (price) => {
+    if (!price) return price
+    const num = parseFloat(price)
+    if (isNaN(num)) return price
+    // Separar parte entera y decimal
+    const parts = num.toString().split('.')
+    const integerPart = parts[0]
+    const decimalPart = parts[1] || ''
+    // Agregar comas a la parte entera
+    const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+    // Combinar con decimales si existen
+    return decimalPart ? `${formattedInteger}.${decimalPart}` : formattedInteger
+  }
   
   // Verificar si el usuario es el creador del botón (owner)
   const isOwner = account && recipientAddress && account.toLowerCase() === recipientAddress.toLowerCase()
@@ -40,6 +75,17 @@ function PaymentButton({
   useEffect(() => {
     setEditableAmount(amount)
   }, [amount])
+
+  // Cerrar modal con tecla ESC
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape' && isImageModalOpen) {
+        setIsImageModalOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [isImageModalOpen])
 
   // Efecto de confetti cuando se confirma el pago
   useEffect(() => {
@@ -276,177 +322,283 @@ function PaymentButton({
   
   const tokenInfo = getTokenInfo()
 
+  // Usar itemName/itemDescription si están disponibles, sino usar concept para compatibilidad
+  const displayName = itemName || concept || ''
+  const displayDescription = itemDescription || ''
+  const displayImage = itemImage || null
+
   return (
     <div className={`payment-button-container ${isCompact ? 'compact' : ''}`}>
       <div className={`payment-info ${isCompact ? 'compact' : ''}`}>
-        {concept && (
-          <div className="concept-section">
-            <h3 className="concept-title">{language === 'es' ? 'Concepto' : 'Concept'}</h3>
-            <p className="concept-text">{concept}</p>
+        {/* Nombre del servicio/producto */}
+        {displayName && (
+          <div className="item-name-section">
+            <h2 className="item-name">{displayName}</h2>
           </div>
         )}
-        <div className="recipient-section">
-          <p className="recipient-label">
-            <strong>{language === 'es' ? 'Destinatario:' : 'Recipient:'}</strong>
-          </p>
-          <p className="recipient-address">
-            <a 
-              href={`https://polygonscan.com/address/${recipientAddress}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="recipient-address-link"
-              title={language === 'es' ? 'Ver en Polygonscan' : 'View on Polygonscan'}
-            >
-              {recipientAddress}
-            </a>
-          </p>
-        </div>
-        <div className="amount-section">
-          {canEditAmount ? (
-            <div className="amount-input-group-full">
-              <span className="amount-label">
-                <strong>{language === 'es' ? 'Monto:' : 'Amount:'}</strong>
-              </span>
-              <input
-                type="number"
-                id="editable-amount"
-                value={editableAmount}
-                onChange={(e) => setEditableAmount(e.target.value)}
-                step="0.000001"
-                min="0"
-                className="amount-input-full"
-                placeholder={amount}
-              />
-              <span className="amount-token-symbol">
-                <a 
-                  href={`https://polygonscan.com/token/${tokenAddress}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="token-link-inline"
-                  title="Ver token en Polygonscan"
-                >
-                  {tokenInfo.name} ({tokenInfo.symbol})
-                </a>
-              </span>
-              {paymentType === 'fixed' && isOwner && (
-                <p className="amount-hint">
-                  {language === 'es' ? 'Solo tú puedes cambiar este monto (Fijo)' : 'Only you can change this amount (Fixed)'}
-                </p>
-              )}
-              {paymentType === 'editable' && (
-                <p className="amount-hint">
-                  {language === 'es' ? 'Puedes cambiar el monto (Variable)' : 'You can change the amount (Variable)'}
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="amount-display-full">
-              <span className="amount-label">
-                <strong>{language === 'es' ? 'Monto:' : 'Amount:'}</strong>
-              </span>
-              <span className="amount-value">{amount}</span>
-              <span className="amount-token-symbol">
-                <a 
-                  href={`https://polygonscan.com/token/${tokenAddress}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="token-link-inline"
-                  title="Ver token en Polygonscan"
-                >
-                  {tokenInfo.name} ({tokenInfo.symbol})
-                </a>
-              </span>
-            </div>
-          )}
-        </div>
-        {account && (
-          <p className="balance-info">
-            <strong>{language === 'es' ? 'Tu balance:' : 'Your balance:'}</strong> {
-              isLoadingBalance 
-                ? (language === 'es' ? 'Cargando...' : 'Loading...')
-                : balance !== null 
-                  ? (
-                    <>
-                      {balance}{' '}
-                      <a 
-                        href={`https://polygonscan.com/token/${tokenAddress}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="token-link-inline"
-                        title="Ver token en Polygonscan"
-                      >
-                        {tokenInfo.name} ({tokenInfo.symbol})
-                      </a>
-                    </>
-                  )
-                  : 'N/A'
-            }
-          </p>
-        )}
-        {currentNetwork && !currentNetwork.isPolygon && (
-          <p className="network-warning">
-            ⚠️ Cambia a Polygon Mainnet para pagar
-          </p>
-        )}
-      </div>
-      
-      <button
-        onClick={handlePayment}
-        disabled={isProcessing || !account || (currentNetwork && !currentNetwork.isPolygon)}
-        className={`payment-btn ${isCompact ? 'compact' : ''}`}
-        style={{ 
-          backgroundColor: buttonColor,
-          opacity: (!account || isProcessing || (currentNetwork && !currentNetwork.isPolygon)) ? 0.6 : 1,
-          cursor: (!account || isProcessing || (currentNetwork && !currentNetwork.isPolygon)) ? 'not-allowed' : 'pointer'
-        }}
-      >
-        {isProcessing ? 'Procesando...' : buttonText}
-      </button>
 
-      {paymentLink && (
-        <div className="payment-link-section">
-          <div className="qr-code-container">
-            <QRCodeSVG 
-              value={paymentLink}
-              size={isCompact ? 150 : 200}
-              level="H"
-              includeMargin={true}
-            />
+        {/* Foto y descripción */}
+        {isCompact ? (
+          // Vista compacta (pagador): foto y descripción lado a lado
+          <div className="item-media-section">
+            <div className="item-image-container">
+              {displayImage ? (
+                <img 
+                  src={displayImage} 
+                  alt={displayName || 'Item'} 
+                  className="item-image item-image-clickable"
+                  onClick={() => setIsImageModalOpen(true)}
+                  title={language === 'es' ? 'Haz clic para ampliar' : 'Click to enlarge'}
+                />
+              ) : (
+                <div className="item-image-placeholder">
+                  {language === 'es' ? 'Sin imagen' : 'No image'}
+                </div>
+              )}
+            </div>
+            {displayDescription && (
+              <div className="item-description-container">
+                <p className="item-description">{displayDescription}</p>
+              </div>
+            )}
           </div>
-          {!isCompact && (
-            <div className="link-container">
-              <input 
-                type="text" 
-                value={paymentLink} 
-                readOnly 
-                className="link-input"
-                onClick={(e) => e.target.select()}
-              />
-              <button 
-                onClick={copyPaymentLink}
-                className="btn-copy-link"
-                title={language === 'es' ? 'Copiar link de pago' : 'Copy payment link'}
-              >
-                {linkCopied ? (language === 'es' ? '✓ Copiado' : '✓ Copied') : (language === 'es' ? '📋 Copiar Link' : '📋 Copy Link')}
-              </button>
+        ) : (
+          // Vista historial: descripción debajo de la foto
+          <div className="item-media-section-history">
+            <div className="item-image-container">
+              {displayImage ? (
+                <img 
+                  src={displayImage} 
+                  alt={displayName || 'Item'} 
+                  className="item-image item-image-clickable"
+                  onClick={() => setIsImageModalOpen(true)}
+                  title={language === 'es' ? 'Haz clic para ampliar' : 'Click to enlarge'}
+                />
+              ) : (
+                <div className="item-image-placeholder">
+                  {language === 'es' ? 'Sin imagen' : 'No image'}
+                </div>
+              )}
+            </div>
+            {displayDescription && (
+              <div className="item-description-container-history">
+                <p className="item-description">{displayDescription}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Precio y tipo de pago */}
+        <div className="price-section">
+          <div className="amount-section">
+            {canEditAmount && paymentType === 'editable' ? (
+              <div className="amount-input-group-full">
+                <span className="amount-label">
+                  <strong>{language === 'es' ? 'Precio:' : 'Price:'}</strong>
+                </span>
+                <input
+                  type="number"
+                  id="editable-amount"
+                  value={editableAmount}
+                  onChange={(e) => setEditableAmount(e.target.value)}
+                  step="0.000001"
+                  min="0"
+                  className="amount-input-full"
+                  placeholder={amount}
+                />
+                <span className="amount-token-symbol">
+                  <a 
+                    href={`https://polygonscan.com/token/${tokenAddress}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="token-link-inline token-link-bold"
+                    title="Ver token en Polygonscan"
+                  >
+                    <strong>{tokenInfo.name} ({tokenInfo.symbol})</strong>
+                  </a>
+                </span>
+              </div>
+            ) : (
+              <div className="amount-display-full">
+                <span className="amount-label">
+                  <strong>{language === 'es' ? 'Precio:' : 'Price:'}</strong>
+                </span>
+                <span className="amount-value amount-value-bold">{formatPrice(amount)}</span>
+                <span className="amount-token-symbol">
+                  <a 
+                    href={`https://polygonscan.com/token/${tokenAddress}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="token-link-inline token-link-bold"
+                    title="Ver token en Polygonscan"
+                  >
+                    <strong>{tokenInfo.name} ({tokenInfo.symbol})</strong>
+                  </a>
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="payment-type-recipient-section">
+            <div className="payment-type-section">
+              <span className="payment-type-label">
+                {language === 'es' ? 'Tipo de pago:' : 'Payment type:'} 
+              </span>
+              <span className="payment-type-value">
+                {paymentType === 'fixed' 
+                  ? (language === 'es' ? 'Fijo' : 'Fixed')
+                  : (language === 'es' ? 'Variable' : 'Variable')
+                }
+              </span>
+            </div>
+            <div className="recipient-section-inline">
+              <span className="recipient-label-inline">
+                <strong>{language === 'es' ? 'Destinatario:' : 'Recipient:'}</strong>
+              </span>
+              <span className="recipient-address-hover">
+                <a 
+                  href={`https://polygonscan.com/address/${recipientAddress}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="recipient-address-link"
+                  title={language === 'es' ? 'Ver en Polygonscan' : 'View on Polygonscan'}
+                >
+                  {formatWallet(recipientAddress)}
+                </a>
+                <div className="wallet-tooltip">
+                  {recipientAddress}
+                </div>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* QR Code y Wallet/Balance en la misma línea */}
+        <div className={`qr-wallet-section ${!isCompact ? 'qr-wallet-section-history' : ''}`}>
+          {/* QR Code (50%) */}
+          {paymentLink && (
+            <div className="payment-link-section-inline">
+              <div className="qr-code-container-inline">
+                <QRCodeSVG 
+                  value={paymentLink}
+                  size={isCompact ? 120 : 112.5}
+                  level="H"
+                  includeMargin={true}
+                />
+              </div>
             </div>
           )}
-          {isCompact && (
+
+          {/* Wallet y Balance (50%) */}
+          <div className="wallet-balance-section">
+            {!account ? (
+              <div className="wallet-connect-placeholder">
+                <p className="wallet-connect-hint">
+                  {language === 'es' ? 'Conecta tu wallet para ver el balance' : 'Connect your wallet to see balance'}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="wallet-from-section">
+                  <p className="wallet-from-label-inline">
+                    <strong>{language === 'es' ? 'Enviar desde:' : 'Send from:'}</strong>
+                  </p>
+                  <p className="wallet-from-address-hover">
+                    <a 
+                      href={`https://polygonscan.com/address/${account}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="recipient-address-link"
+                      title={language === 'es' ? 'Ver en Polygonscan' : 'View on Polygonscan'}
+                    >
+                      {formatWallet(account)}
+                    </a>
+                    <div className="wallet-tooltip">
+                      {account}
+                    </div>
+                  </p>
+                </div>
+                {account && (
+                  <div className="balance-section-inline">
+                    <p className="balance-info-inline">
+                      <strong>{language === 'es' ? 'Tu balance:' : 'Your balance:'}</strong>
+                    </p>
+                    <div className="balance-amount-token">
+                      <span className="balance-amount">
+                        {isLoadingBalance 
+                          ? (language === 'es' ? 'Cargando...' : 'Loading...')
+                          : balance !== null 
+                            ? formatBalance(balance)
+                            : 'N/A'
+                        }
+                      </span>
+                      <span className="balance-token-symbol">
+                        {tokenInfo.symbol}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Botón Copiar URL al 100% del ancho */}
+        {paymentLink && (
+          <div className="copy-url-button-section">
             <button 
               onClick={copyPaymentLink}
-              className="btn-copy-link btn-copy-link-compact"
+              className="btn-copy-link btn-copy-link-full"
               title={language === 'es' ? 'Copiar link de pago' : 'Copy payment link'}
             >
               {linkCopied ? (language === 'es' ? '✓ Copiado' : '✓ Copied') : (language === 'es' ? '📋 Copiar URL' : '📋 Copy URL')}
             </button>
+          </div>
+        )}
+
+        {/* Botones al 100% del contenedor */}
+        <div className="action-buttons-section">
+          {!account && (
+            <div className="wallet-connect-section">
+              {onConnectWallet ? (
+                <button
+                  onClick={onConnectWallet}
+                  className="btn btn-primary btn-connect-wallet"
+                  disabled={isConnecting}
+                >
+                  {isConnecting 
+                    ? (language === 'es' ? 'Conectando...' : 'Connecting...')
+                    : (language === 'es' ? 'Conectar Wallet' : 'Connect Wallet')
+                  }
+                </button>
+              ) : (
+                <p className="warning-text-small">
+                  {language === 'es' ? 'Conecta tu wallet para pagar' : 'Connect your wallet to pay'}
+                </p>
+              )}
+            </div>
           )}
-          {!isCompact && (
-            <p className="link-hint">
-              {language === 'es' ? 'Comparte este link o escanea el QR en redes sociales para que otros puedan pagar' : 'Share this link or scan the QR code on social media so others can pay'}
+
+          {currentNetwork && !currentNetwork.isPolygon && (
+            <p className="network-warning">
+              ⚠️ {language === 'es' ? 'Cambia a Polygon Mainnet para pagar' : 'Switch to Polygon Mainnet to pay'}
             </p>
           )}
+
+          <button
+            onClick={handlePayment}
+            disabled={isProcessing || !account || (currentNetwork && !currentNetwork.isPolygon)}
+            className={`payment-btn ${isCompact ? 'compact' : ''}`}
+            style={{ 
+              backgroundColor: buttonColor,
+              opacity: (!account || isProcessing || (currentNetwork && !currentNetwork.isPolygon)) ? 0.6 : 1,
+              cursor: (!account || isProcessing || (currentNetwork && !currentNetwork.isPolygon)) ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {isProcessing ? (language === 'es' ? 'Procesando...' : 'Processing...') : buttonText}
+          </button>
         </div>
-      )}
+      </div>
+
 
       {status && (
         <div className={`status-message ${(status === 'Pago realizado' || status === 'Payment successful') ? 'success' : 'error'}`}>
@@ -466,10 +618,24 @@ function PaymentButton({
         </div>
       )}
 
-      {!account && (
-        <p className="warning-text-small">
-          {language === 'es' ? 'Conecta tu wallet para pagar' : 'Connect your wallet to pay'}
-        </p>
+      {/* Modal Lightbox para la imagen */}
+      {isImageModalOpen && displayImage && (
+        <div className="image-lightbox-overlay" onClick={() => setIsImageModalOpen(false)}>
+          <div className="image-lightbox-content" onClick={(e) => e.stopPropagation()}>
+            <button 
+              className="image-lightbox-close"
+              onClick={() => setIsImageModalOpen(false)}
+              aria-label={language === 'es' ? 'Cerrar' : 'Close'}
+            >
+              ×
+            </button>
+            <img 
+              src={displayImage} 
+              alt={displayName || 'Item'} 
+              className="image-lightbox-image"
+            />
+          </div>
+        </div>
       )}
     </div>
   )

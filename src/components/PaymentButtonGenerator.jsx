@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react'
 import { ethers } from 'ethers'
+import { supabase } from '../lib/supabase'
 
 function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, tokenSymbol, language = 'es' }) {
   const [recipientAddress, setRecipientAddress] = useState('')
   const [amount, setAmount] = useState('')
-  const [concept, setConcept] = useState('')
+  const [itemName, setItemName] = useState('')
+  const [itemDescription, setItemDescription] = useState('')
+  const [itemImage, setItemImage] = useState(null)
+  const [itemImagePreview, setItemImagePreview] = useState(null)
   const [buttonText, setButtonText] = useState(language === 'es' ? 'Pagar' : 'Pay')
   const [buttonColor, setButtonColor] = useState('#6366f1')
   const [paymentType, setPaymentType] = useState('fixed') // 'fixed' o 'editable'
@@ -33,10 +37,69 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
     setIsGenerating(true)
 
     try {
+      // Subir imagen a Supabase Storage si existe
+      let imageUrl = null
+      if (itemImage && supabase) {
+        try {
+          // Generar nombre único para la imagen
+          const fileExt = itemImage.name.split('.').pop()
+          const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+          const filePath = `payment-items/${fileName}`
+
+          // Validar tamaño (máximo 5MB)
+          if (itemImage.size > 5 * 1024 * 1024) {
+            alert(language === 'es' ? 'La imagen es demasiado grande. Máximo 5MB.' : 'Image is too large. Maximum 5MB.')
+            setIsGenerating(false)
+            return
+          }
+
+          // Subir a Supabase Storage
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('payment-item-images')
+            .upload(filePath, itemImage, {
+              cacheControl: '3600',
+              upsert: false
+            })
+
+          if (uploadError) {
+            console.error('Error subiendo imagen:', uploadError)
+            alert(language === 'es' 
+              ? 'Error al subir la imagen. Por favor, intenta de nuevo.' 
+              : 'Error uploading image. Please try again.')
+            setIsGenerating(false)
+            return
+          }
+
+          // Obtener URL pública de la imagen
+          const { data: urlData } = supabase.storage
+            .from('payment-item-images')
+            .getPublicUrl(filePath)
+
+          imageUrl = urlData.publicUrl
+        } catch (error) {
+          console.error('Error procesando imagen:', error)
+          alert(language === 'es' 
+            ? 'Error al procesar la imagen. Por favor, intenta de nuevo.' 
+            : 'Error processing image. Please try again.')
+          setIsGenerating(false)
+          return
+        }
+      } else if (itemImage && !supabase) {
+        // Fallback: convertir a base64 si Supabase no está configurado
+        const reader = new FileReader()
+        imageUrl = await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result)
+          reader.onerror = reject
+          reader.readAsDataURL(itemImage)
+        })
+      }
+
       const buttonData = {
         recipientAddress,
         amount,
-        concept,
+        itemName,
+        itemDescription,
+        itemImage: imageUrl,
         buttonText,
         buttonColor,
         tokenAddress,
@@ -48,7 +111,10 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
       // Limpiar formulario solo si se generó correctamente
       setRecipientAddress('')
       setAmount('')
-      setConcept('')
+      setItemName('')
+      setItemDescription('')
+      setItemImage(null)
+      setItemImagePreview(null)
       setButtonText(language === 'es' ? 'Pagar' : 'Pay')
       setButtonColor('#6366f1')
       setPaymentType('fixed')
@@ -93,15 +159,57 @@ function PaymentButtonGenerator({ onGenerate, tokenAddress, provider, account, t
         </div>
 
         <div className="form-group">
-          <label htmlFor="concept">{language === 'es' ? 'Concepto del Pago:' : 'Payment Concept:'}</label>
+          <label htmlFor="itemName">{language === 'es' ? 'Nombre del Artículo o Servicio:' : 'Item or Service Name:'}</label>
           <input
             type="text"
-            id="concept"
-            value={concept}
-            onChange={(e) => setConcept(e.target.value)}
-            placeholder={language === 'es' ? 'Ej: Pago de servicios, Producto XYZ, etc.' : 'E.g: Service payment, Product XYZ, etc.'}
+            id="itemName"
+            value={itemName}
+            onChange={(e) => setItemName(e.target.value)}
+            placeholder={language === 'es' ? 'Ej: Producto XYZ, Servicio de Consultoría, etc.' : 'E.g: Product XYZ, Consulting Service, etc.'}
             required
             className="form-input"
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="itemImage">{language === 'es' ? 'Imagen del Artículo:' : 'Item Image:'}</label>
+          <input
+            type="file"
+            id="itemImage"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files[0]
+              if (file) {
+                setItemImage(file)
+                const reader = new FileReader()
+                reader.onloadend = () => {
+                  setItemImagePreview(reader.result)
+                }
+                reader.readAsDataURL(file)
+              } else {
+                setItemImage(null)
+                setItemImagePreview(null)
+              }
+            }}
+            className="form-input"
+          />
+          {itemImagePreview && (
+            <div className="image-preview-container">
+              <img src={itemImagePreview} alt="Preview" className="image-preview" />
+            </div>
+          )}
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="itemDescription">{language === 'es' ? 'Descripción del Artículo o Servicio:' : 'Item or Service Description:'}</label>
+          <textarea
+            id="itemDescription"
+            value={itemDescription}
+            onChange={(e) => setItemDescription(e.target.value)}
+            placeholder={language === 'es' ? 'Describe tu artículo o servicio en detalle...' : 'Describe your item or service in detail...'}
+            required
+            className="form-input form-textarea"
+            rows="4"
           />
         </div>
 

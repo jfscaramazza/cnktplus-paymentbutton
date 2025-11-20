@@ -368,11 +368,18 @@ function App() {
   // Generar link de pago corto usando Supabase
   const generatePaymentLink = async (buttonData) => {
     // Si Supabase no está configurado, usar método antiguo con localStorage
+    // Nota: Si hay imagen, solo se incluye si es Base64 (URLs de Storage son muy largas para parámetros)
     if (!supabase) {
       const params = new URLSearchParams({
         recipient: buttonData.recipientAddress,
         amount: buttonData.amount,
-        concept: buttonData.concept || '',
+        concept: buttonData.concept || '', // Mantener para compatibilidad
+        itemName: buttonData.itemName || '',
+        itemDescription: buttonData.itemDescription || '',
+        // Solo incluir imagen si es Base64 (data:image), no URLs de Storage
+        itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image'))
+          ? buttonData.itemImage
+          : '',
         text: buttonData.buttonText,
         color: buttonData.buttonColor.replace('#', ''),
         token: selectedTokenAddress
@@ -423,7 +430,10 @@ function App() {
         recipient_address: recipientLower,
         owner_address: ownerAddress || recipientLower, // Fallback: siempre usar recipient si owner está vacío
         amount: String(buttonData.amount), // Asegurar que sea string
-        concept: buttonData.concept || '',
+        concept: buttonData.concept || '', // Mantener para compatibilidad
+        item_name: buttonData.itemName || '',
+        item_description: buttonData.itemDescription || '',
+        item_image: buttonData.itemImage || '', // Base64 o URL
         button_text: buttonData.buttonText || '',
         button_color: buttonData.buttonColor.replace('#', ''),
         token_address: selectedTokenAddress.toLowerCase()
@@ -456,10 +466,16 @@ function App() {
         console.error('Hint del error:', error.hint)
         console.error('Datos que se intentaron guardar:', insertData)
 
-        // Si el error es por payment_type, intentar sin esa columna
-        if (error.message && error.message.includes('payment_type')) {
-          console.warn('La columna payment_type no existe. Intentando sin ella...')
+        // Si el error es por payment_type o campos de item, intentar sin ellos
+        if (error.message && (error.message.includes('payment_type') ||
+          error.message.includes('item_name') ||
+          error.message.includes('item_description') ||
+          error.message.includes('item_image'))) {
+          console.warn('Algunas columnas no existen. Intentando sin ellas...')
           delete insertData.payment_type
+          delete insertData.item_name
+          delete insertData.item_description
+          delete insertData.item_image
 
           const { data: retryData, error: retryError } = await supabase
             .from('payment_buttons')
@@ -471,7 +487,7 @@ function App() {
             // Continuar con el flujo de error original
           } else {
             // Éxito en el segundo intento
-            console.log('Botón guardado exitosamente sin payment_type')
+            console.log('Botón guardado exitosamente sin campos nuevos')
             const fullUrl = `${window.location.origin}/${retryData[0].id}`
             return fullUrl
           }
@@ -488,6 +504,12 @@ function App() {
           recipient: buttonData.recipientAddress,
           amount: buttonData.amount,
           concept: buttonData.concept || '',
+          itemName: buttonData.itemName || '',
+          itemDescription: buttonData.itemDescription || '',
+          // Solo incluir imagen si es Base64 (data:image), no URLs de Storage
+          itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image'))
+            ? buttonData.itemImage
+            : '',
           text: buttonData.buttonText,
           color: buttonData.buttonColor.replace('#', ''),
           token: selectedTokenAddress
@@ -509,7 +531,13 @@ function App() {
       const params = new URLSearchParams({
         recipient: buttonData.recipientAddress,
         amount: buttonData.amount,
-        concept: buttonData.concept || '',
+        concept: buttonData.concept || '', // Mantener para compatibilidad
+        itemName: buttonData.itemName || '',
+        itemDescription: buttonData.itemDescription || '',
+        // Solo incluir imagen si es Base64 (data:image), no URLs de Storage
+        itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image'))
+          ? buttonData.itemImage
+          : '',
         text: buttonData.buttonText,
         color: buttonData.buttonColor.replace('#', ''),
         token: selectedTokenAddress
@@ -543,7 +571,10 @@ function App() {
 
           const recipientAddress = data.recipient_address
           const amount = data.amount
-          const concept = data.concept || ''
+          const concept = data.concept || '' // Compatibilidad
+          const itemName = data.item_name || ''
+          const itemDescription = data.item_description || ''
+          const itemImage = data.item_image || ''
           const buttonText = data.button_text || (language === 'es' ? 'Pagar' : 'Pay')
           const buttonColor = `#${data.button_color || '6366f1'}`
           const tokenAddress = data.token_address || selectedTokenAddress
@@ -559,7 +590,10 @@ function App() {
               id: buttonId,
               recipientAddress,
               amount,
-              concept,
+              concept, // Compatibilidad
+              itemName,
+              itemDescription,
+              itemImage,
               buttonText,
               buttonColor,
               tokenAddress,
@@ -585,7 +619,10 @@ function App() {
     if (urlParams.has('payment')) {
       const recipientAddress = urlParams.get('recipient')
       const amount = urlParams.get('amount')
-      const concept = urlParams.get('concept') || ''
+      const concept = urlParams.get('concept') || '' // Compatibilidad
+      const itemName = urlParams.get('itemName') || ''
+      const itemDescription = urlParams.get('itemDescription') || ''
+      const itemImage = urlParams.get('itemImage') || ''
       const buttonText = urlParams.get('text') || 'Pagar'
       const buttonColor = `#${urlParams.get('color') || '6366f1'}`
       const tokenAddress = urlParams.get('token') || selectedTokenAddress
@@ -604,7 +641,10 @@ function App() {
           id: buttonId,
           recipientAddress,
           amount,
-          concept,
+          concept, // Compatibilidad
+          itemName,
+          itemDescription,
+          itemImage,
           buttonText,
           buttonColor,
           tokenAddress,
@@ -819,7 +859,10 @@ function App() {
         shortId: item.id,
         recipientAddress: item.recipient_address,
         amount: item.amount,
-        concept: item.concept || '',
+        concept: item.concept || '', // Compatibilidad
+        itemName: item.item_name || '',
+        itemDescription: item.item_description || '',
+        itemImage: item.item_image || '',
         buttonText: item.button_text || (language === 'es' ? 'Pagar' : 'Pay'),
         buttonColor: `#${item.button_color || '6366f1'}`,
         tokenAddress: item.token_address,
@@ -873,29 +916,6 @@ function App() {
         <div className="payment-card">
           <div className="payment-card-header">
             <h2>DEFIPAGO</h2>
-            {account ? (
-              <div className="payment-card-wallet">
-                <span className="wallet-address-small">
-                  {account}
-                </span>
-                {currentNetwork && !currentNetwork.isPolygon && (
-                  <button
-                    onClick={switchToPolygon}
-                    className="btn btn-switch-network-small"
-                  >
-                    Cambiar a Polygon
-                  </button>
-                )}
-              </div>
-            ) : (
-              <button
-                onClick={connectWallet}
-                className="btn btn-primary btn-small"
-                disabled={isConnecting}
-              >
-                {isConnecting ? 'Conectando...' : 'Conectar Wallet'}
-              </button>
-            )}
           </div>
 
           <PaymentButton
@@ -907,6 +927,7 @@ function App() {
             tokenSymbol={tokenSymbol}
             currentNetwork={currentNetwork}
             onSwitchNetwork={switchToPolygon}
+            onConnectWallet={connectWallet}
             isCompact={true}
             language={language}
             paymentType={paymentButton.paymentType || 'fixed'}
@@ -1182,6 +1203,7 @@ function App() {
                         tokenSymbol={tokenSymbol}
                         currentNetwork={currentNetwork}
                         onSwitchNetwork={switchToPolygon}
+                        onConnectWallet={connectWallet}
                         language={language}
                         paymentType={button.paymentType}
                       />
