@@ -870,6 +870,8 @@ function App() {
       if (shortId && supabase && account) {
         const ownerAddress = account.toLowerCase()
 
+        console.log('Eliminando botón:', { shortId, ownerAddress, buttonData: buttonData ? 'present' : 'null' })
+
         // Si tenemos los datos del botón, eliminar las imágenes del bucket
         if (buttonData) {
           const imagesToDelete = [
@@ -878,11 +880,14 @@ function App() {
             buttonData.itemImage3
           ].filter(img => img && img.includes('storage/v1/object/public/payment-item-images/'))
 
+          console.log('Imágenes a eliminar:', imagesToDelete.length)
+
           // Eliminar cada imagen del bucket
           for (const imageUrl of imagesToDelete) {
             const filePath = extractFilePathFromUrl(imageUrl)
             if (filePath) {
               try {
+                console.log('Eliminando imagen del bucket:', filePath)
                 // El filePath ya incluye 'payment-items/filename.jpg'
                 const { error: deleteError } = await supabase.storage
                   .from('payment-item-images')
@@ -892,7 +897,7 @@ function App() {
                   console.warn('Error eliminando imagen del bucket:', deleteError)
                   // Continuar aunque falle la eliminación de una imagen
                 } else {
-                  console.log('Imagen eliminada del bucket:', filePath)
+                  console.log('Imagen eliminada del bucket exitosamente:', filePath)
                 }
               } catch (imgError) {
                 console.warn('Error procesando eliminación de imagen:', imgError)
@@ -903,19 +908,43 @@ function App() {
         }
 
         // Eliminar el botón de la base de datos (hard delete)
-        const { error } = await supabase
+        // Usar ilike para owner_address (case-insensitive) como en otras funciones
+        const { data: deletedData, error } = await supabase
           .from('payment_buttons')
           .delete()
           .eq('id', shortId)
-          .eq('owner_address', ownerAddress)
+          .ilike('owner_address', ownerAddress) // Case-insensitive como en archiveButton
+          .select()
+
+        console.log('Resultado de eliminación:', { deletedData, error })
 
         if (error) {
           console.error('Error eliminando botón:', error)
-          alert(language === 'es' ? 'Error al eliminar el botón. Por favor, intenta de nuevo.' : 'Error deleting button. Please try again.')
+          console.error('Detalles del error:', {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint
+          })
+          alert(language === 'es' 
+            ? `Error al eliminar el botón: ${error.message || 'Error desconocido'}` 
+            : `Error deleting button: ${error.message || 'Unknown error'}`)
           setRemoveStatus({ id, status: 'fail' })
           setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
           return
         }
+
+        if (!deletedData || deletedData.length === 0) {
+          console.warn('No se encontró ningún botón para eliminar con los criterios:', { shortId, ownerAddress })
+          alert(language === 'es' 
+            ? 'No se encontró el botón para eliminar. Puede que ya haya sido eliminado o no tengas permisos.' 
+            : 'Button not found to delete. It may have already been deleted or you may not have permissions.')
+          setRemoveStatus({ id, status: 'fail' })
+          setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+          return
+        }
+
+        console.log('Botón eliminado exitosamente:', deletedData)
 
         // Recargar historial
         const actualPageSize = typeof pageSize === 'number' ? pageSize : 3
@@ -924,6 +953,7 @@ function App() {
         setRemoveStatus({ id, status: 'success' })
         setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
       } else {
+        console.warn('No se puede eliminar: falta shortId, supabase o account', { shortId, hasSupabase: !!supabase, hasAccount: !!account })
         // Fallback: eliminar del estado local si no hay Supabase
         const newButtons = buttons.filter(btn => btn.id !== id)
         setButtons(newButtons)
@@ -932,7 +962,9 @@ function App() {
       }
     } catch (error) {
       console.error('Error en deleteButton:', error)
-      alert(language === 'es' ? 'Error al eliminar el botón. Por favor, intenta de nuevo.' : 'Error deleting button. Please try again.')
+      alert(language === 'es' 
+        ? `Error al eliminar el botón: ${error.message || 'Error desconocido'}` 
+        : `Error deleting button: ${error.message || 'Unknown error'}`)
       setRemoveStatus({ id, status: 'fail' })
       setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
     }
