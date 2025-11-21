@@ -332,7 +332,7 @@ function App() {
     if (window.ethereum) {
       window.ethereum.removeAllListeners('chainChanged')
       window.ethereum.removeAllListeners('accountsChanged')
-      
+
       // Revocar permisos para forzar confirmación en próxima conexión
       try {
         await window.ethereum.request({
@@ -399,14 +399,14 @@ function App() {
         itemName: buttonData.itemName || '',
         itemDescription: buttonData.itemDescription || '',
         // Solo incluir imágenes si son Base64 (data:image), no URLs de Storage
-        itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image')) 
-          ? buttonData.itemImage 
+        itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image'))
+          ? buttonData.itemImage
           : '',
-        itemImage2: (buttonData.itemImage2 && buttonData.itemImage2.startsWith('data:image')) 
-          ? buttonData.itemImage2 
+        itemImage2: (buttonData.itemImage2 && buttonData.itemImage2.startsWith('data:image'))
+          ? buttonData.itemImage2
           : '',
-        itemImage3: (buttonData.itemImage3 && buttonData.itemImage3.startsWith('data:image')) 
-          ? buttonData.itemImage3 
+        itemImage3: (buttonData.itemImage3 && buttonData.itemImage3.startsWith('data:image'))
+          ? buttonData.itemImage3
           : '',
         text: buttonData.buttonText,
         color: buttonData.buttonColor.replace('#', ''),
@@ -517,10 +517,10 @@ function App() {
         console.error('Datos que se intentaron guardar:', insertData)
 
         // Si el error es por payment_type o campos de item, intentar sin ellos
-        if (error.message && (error.message.includes('payment_type') || 
-            error.message.includes('item_name') || 
-            error.message.includes('item_description') || 
-            error.message.includes('item_image'))) {
+        if (error.message && (error.message.includes('payment_type') ||
+          error.message.includes('item_name') ||
+          error.message.includes('item_description') ||
+          error.message.includes('item_image'))) {
           console.warn('Algunas columnas no existen. Intentando sin ellas...')
           delete insertData.payment_type
           delete insertData.item_name
@@ -559,14 +559,14 @@ function App() {
           itemName: buttonData.itemName || '',
           itemDescription: buttonData.itemDescription || '',
           // Solo incluir imágenes si son Base64 (data:image), no URLs de Storage
-          itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image')) 
-            ? buttonData.itemImage 
+          itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image'))
+            ? buttonData.itemImage
             : '',
-          itemImage2: (buttonData.itemImage2 && buttonData.itemImage2.startsWith('data:image')) 
-            ? buttonData.itemImage2 
+          itemImage2: (buttonData.itemImage2 && buttonData.itemImage2.startsWith('data:image'))
+            ? buttonData.itemImage2
             : '',
-          itemImage3: (buttonData.itemImage3 && buttonData.itemImage3.startsWith('data:image')) 
-            ? buttonData.itemImage3 
+          itemImage3: (buttonData.itemImage3 && buttonData.itemImage3.startsWith('data:image'))
+            ? buttonData.itemImage3
             : '',
           text: buttonData.buttonText,
           color: buttonData.buttonColor.replace('#', ''),
@@ -593,14 +593,14 @@ function App() {
         itemName: buttonData.itemName || '',
         itemDescription: buttonData.itemDescription || '',
         // Solo incluir imágenes si son Base64 (data:image), no URLs de Storage
-        itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image')) 
-          ? buttonData.itemImage 
+        itemImage: (buttonData.itemImage && buttonData.itemImage.startsWith('data:image'))
+          ? buttonData.itemImage
           : '',
-        itemImage2: (buttonData.itemImage2 && buttonData.itemImage2.startsWith('data:image')) 
-          ? buttonData.itemImage2 
+        itemImage2: (buttonData.itemImage2 && buttonData.itemImage2.startsWith('data:image'))
+          ? buttonData.itemImage2
           : '',
-        itemImage3: (buttonData.itemImage3 && buttonData.itemImage3.startsWith('data:image')) 
-          ? buttonData.itemImage3 
+        itemImage3: (buttonData.itemImage3 && buttonData.itemImage3.startsWith('data:image'))
+          ? buttonData.itemImage3
           : '',
         text: buttonData.buttonText,
         color: buttonData.buttonColor.replace('#', ''),
@@ -711,25 +711,25 @@ function App() {
         }
 
         const buttonId = Date.now()
-            const buttonData = {
-              id: buttonId,
-              recipientAddress,
-              amount,
-              concept, // Compatibilidad
-              itemName,
-              itemDescription,
-              itemImage,
-              itemImage2,
-              itemImage3,
-              buttonText,
-              buttonColor,
-              tokenAddress,
-              paymentType: urlParams.get('paymentType') || 'fixed',
-              usageType: urlParams.get('usageType') || 'single_use',
-              maxUses: parseInt(urlParams.get('maxUses')) || 1,
-              currentUses: parseInt(urlParams.get('currentUses')) || 0,
-              paymentLink: window.location.href
-            }
+        const buttonData = {
+          id: buttonId,
+          recipientAddress,
+          amount,
+          concept, // Compatibilidad
+          itemName,
+          itemDescription,
+          itemImage,
+          itemImage2,
+          itemImage3,
+          buttonText,
+          buttonColor,
+          tokenAddress,
+          paymentType: urlParams.get('paymentType') || 'fixed',
+          usageType: urlParams.get('usageType') || 'single_use',
+          maxUses: parseInt(urlParams.get('maxUses')) || 1,
+          currentUses: parseInt(urlParams.get('currentUses')) || 0,
+          paymentLink: window.location.href
+        }
         setButtons([buttonData])
 
         // Cargar información del token si hay provider
@@ -787,7 +787,7 @@ function App() {
 
     try {
       const recipientLower = buttonData.recipientAddress.toLowerCase()
-      
+
       const updateData = {
         amount: String(buttonData.amount),
         item_name: buttonData.itemName || '',
@@ -830,7 +830,7 @@ function App() {
 
       // Salir del modo edición y resetear formulario
       setEditingButton(null)
-      
+
       // Notificar al componente PaymentButtonGenerator para que resetee el formulario
       // Esto se hace a través de cambiar editingButton a null, que ya está hecho arriba
     } catch (error) {
@@ -875,10 +875,10 @@ function App() {
   // Eliminar botón permanentemente (con confirmación y eliminación de imágenes)
   const deleteButton = async (id, shortId = null, buttonData = null) => {
     // Pedir confirmación
-    const confirmMessage = language === 'es' 
+    const confirmMessage = language === 'es'
       ? '¿Estás seguro de que deseas eliminar este botón permanentemente? Esta acción no se puede deshacer y también eliminará las imágenes asociadas.'
       : 'Are you sure you want to permanently delete this button? This action cannot be undone and will also delete associated images.'
-    
+
     if (!window.confirm(confirmMessage)) {
       return
     }
@@ -889,8 +889,8 @@ function App() {
       // Validar que tenemos los datos necesarios
       if (!shortId) {
         console.error('No se proporcionó shortId para eliminar')
-        alert(language === 'es' 
-          ? 'Error: No se puede eliminar el botón sin un ID válido.' 
+        alert(language === 'es'
+          ? 'Error: No se puede eliminar el botón sin un ID válido.'
           : 'Error: Cannot delete button without a valid ID.')
         setRemoveStatus({ id, status: 'fail' })
         setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
@@ -899,8 +899,8 @@ function App() {
 
       if (!supabase) {
         console.error('Supabase no está configurado')
-        alert(language === 'es' 
-          ? 'Error: Supabase no está configurado.' 
+        alert(language === 'es'
+          ? 'Error: Supabase no está configurado.'
           : 'Error: Supabase is not configured.')
         setRemoveStatus({ id, status: 'fail' })
         setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
@@ -909,8 +909,8 @@ function App() {
 
       if (!account) {
         console.error('No hay wallet conectada')
-        alert(language === 'es' 
-          ? 'Error: Debes conectar tu wallet para eliminar botones.' 
+        alert(language === 'es'
+          ? 'Error: Debes conectar tu wallet para eliminar botones.'
           : 'Error: You must connect your wallet to delete buttons.')
         setRemoveStatus({ id, status: 'fail' })
         setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
@@ -942,7 +942,7 @@ function App() {
                 const { error: deleteError } = await supabase.storage
                   .from('payment-item-images')
                   .remove([filePath])
-                
+
                 if (deleteError) {
                   console.warn('Error eliminando imagen del bucket:', deleteError)
                   // Continuar aunque falle la eliminación de una imagen
@@ -966,8 +966,8 @@ function App() {
 
         if (checkError) {
           console.error('Error verificando botón:', checkError)
-          alert(language === 'es' 
-            ? `Error al verificar el botón: ${checkError.message || 'Error desconocido'}` 
+          alert(language === 'es'
+            ? `Error al verificar el botón: ${checkError.message || 'Error desconocido'}`
             : `Error checking button: ${checkError.message || 'Unknown error'}`)
           setRemoveStatus({ id, status: 'fail' })
           setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
@@ -976,8 +976,8 @@ function App() {
 
         if (!buttonCheck) {
           console.warn('Botón no encontrado:', { shortId })
-          alert(language === 'es' 
-            ? 'No se encontró el botón para eliminar. Puede que ya haya sido eliminado.' 
+          alert(language === 'es'
+            ? 'No se encontró el botón para eliminar. Puede que ya haya sido eliminado.'
             : 'Button not found to delete. It may have already been deleted.')
           setRemoveStatus({ id, status: 'fail' })
           setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
@@ -990,14 +990,14 @@ function App() {
         const canDelete = buttonOwner === ownerAddress || buttonRecipient === ownerAddress
 
         if (!canDelete) {
-          console.warn('Sin permisos para eliminar:', { 
-            shortId, 
-            ownerAddress, 
-            buttonOwner, 
-            buttonRecipient 
+          console.warn('Sin permisos para eliminar:', {
+            shortId,
+            ownerAddress,
+            buttonOwner,
+            buttonRecipient
           })
-          alert(language === 'es' 
-            ? 'No tienes permisos para eliminar este botón. Solo el creador puede eliminarlo.' 
+          alert(language === 'es'
+            ? 'No tienes permisos para eliminar este botón. Solo el creador puede eliminarlo.'
             : 'You do not have permission to delete this button. Only the creator can delete it.')
           setRemoveStatus({ id, status: 'fail' })
           setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
@@ -1006,11 +1006,11 @@ function App() {
 
         // Eliminar el botón de la base de datos (hard delete)
         // Ya verificamos permisos arriba, así que solo necesitamos filtrar por id
-        console.log('Intentando eliminar registro con:', { 
-          shortId, 
-          ownerAddress, 
-          buttonOwner, 
-          buttonRecipient 
+        console.log('Intentando eliminar registro con:', {
+          shortId,
+          ownerAddress,
+          buttonOwner,
+          buttonRecipient
         })
 
         // Eliminar usando el filtro que sabemos que funciona (owner_address o recipient_address)
@@ -1027,8 +1027,8 @@ function App() {
           .ilike(filterField, filterValue)
           .select()
 
-        console.log('Resultado de eliminación completa:', { 
-          deletedData, 
+        console.log('Resultado de eliminación completa:', {
+          deletedData,
           error,
           deletedCount: deletedData?.length || 0
         })
@@ -1041,8 +1041,8 @@ function App() {
             details: error.details,
             hint: error.hint
           })
-          alert(language === 'es' 
-            ? `Error al eliminar el botón: ${error.message || 'Error desconocido'}` 
+          alert(language === 'es'
+            ? `Error al eliminar el botón: ${error.message || 'Error desconocido'}`
             : `Error deleting button: ${error.message || 'Unknown error'}`)
           setRemoveStatus({ id, status: 'fail' })
           setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
@@ -1050,31 +1050,31 @@ function App() {
         }
 
         if (!deletedData || deletedData.length === 0) {
-          console.warn('No se eliminó ningún registro. Posibles causas:', { 
-            shortId, 
-            ownerAddress, 
-            buttonOwner, 
+          console.warn('No se eliminó ningún registro. Posibles causas:', {
+            shortId,
+            ownerAddress,
+            buttonOwner,
             buttonRecipient,
             message: 'Puede que las políticas RLS estén bloqueando la eliminación o que el registro ya no exista'
           })
-          
+
           // Intentar una segunda verificación para ver si el botón aún existe
           const { data: stillExists } = await supabase
             .from('payment_buttons')
             .select('id')
             .eq('id', shortId)
             .maybeSingle()
-          
+
           if (stillExists) {
             console.error('El botón aún existe después del intento de eliminación. Posible problema de permisos RLS.')
-            alert(language === 'es' 
-              ? 'No se pudo eliminar el botón. Puede ser un problema de permisos. Verifica las políticas RLS en Supabase.' 
+            alert(language === 'es'
+              ? 'No se pudo eliminar el botón. Puede ser un problema de permisos. Verifica las políticas RLS en Supabase.'
               : 'Could not delete button. This may be a permissions issue. Check RLS policies in Supabase.')
           } else {
             console.log('El botón ya no existe, puede que haya sido eliminado por otro proceso.')
             // Continuar como si se hubiera eliminado exitosamente
           }
-          
+
           setRemoveStatus({ id, status: 'fail' })
           setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
           return
@@ -1084,14 +1084,14 @@ function App() {
 
         // Recargar historial después de eliminar
         const actualPageSize = typeof pageSize === 'number' ? pageSize : 3
-        
+
         // Esperar un momento para que Supabase procese la eliminación
         await new Promise(resolve => setTimeout(resolve, 500))
-        
+
         // Recargar el historial
         console.log('Recargando historial después de eliminar...')
         await loadHistoryFromSupabase(currentPage, actualPageSize, historyTab === 'archived')
-        
+
         // También recargar el otro tab por si acaso
         if (historyTab === 'active') {
           await loadHistoryFromSupabase(1, actualPageSize, true) // Recargar archivados
@@ -1111,8 +1111,8 @@ function App() {
       }
     } catch (error) {
       console.error('Error en deleteButton:', error)
-      alert(language === 'es' 
-        ? `Error al eliminar el botón: ${error.message || 'Error desconocido'}` 
+      alert(language === 'es'
+        ? `Error al eliminar el botón: ${error.message || 'Error desconocido'}`
         : `Error deleting button: ${error.message || 'Unknown error'}`)
       setRemoveStatus({ id, status: 'fail' })
       setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
@@ -1462,7 +1462,7 @@ function App() {
             {language === 'es' ? 'Ayúdanos a mantener la plataforma con tu aporte' : 'Help us maintain the platform with your contribution'}
             {' '}
             <a
-              href="http://defipago.netlify.app/bf5wU1"
+              href="https://defipago.netlify.app/Bn2eDx"
               target="_blank"
               rel="noopener noreferrer"
               className="credits-link"
@@ -1504,7 +1504,7 @@ function App() {
           {language === 'es' ? 'Ayúdanos a mantener la plataforma con tu aporte' : 'Help us maintain the platform with your contribution'}
           {' '}
           <a
-            href="http://defipago.netlify.app/bf5wU1"
+            href="https://defipago.netlify.app/Bn2eDx"
             target="_blank"
             rel="noopener noreferrer"
             className="credits-link"
@@ -1824,7 +1824,7 @@ function App() {
           {language === 'es' ? 'Ayúdanos a mantener la plataforma con tu aporte' : 'Help us maintain the platform with your contribution'}
           {' '}
           <a
-            href="http://defipago.netlify.app/bf5wU1"
+            href="https://defipago.netlify.app/Bn2eDx"
             target="_blank"
             rel="noopener noreferrer"
             className="credits-link"
