@@ -29,6 +29,8 @@ function PaymentButtonGenerator({
   const [buttonText, setButtonText] = useState(language === 'es' ? 'Pagar' : 'Pay')
   const [buttonColor, setButtonColor] = useState('#6366f1')
   const [paymentType, setPaymentType] = useState('fixed')
+  const [usageType, setUsageType] = useState('single_use') // 'single_use', 'unlimited', 'limited'
+  const [maxUses, setMaxUses] = useState(1) // Para 'limited'
   const [isGenerating, setIsGenerating] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   
@@ -59,6 +61,8 @@ function PaymentButtonGenerator({
     setButtonText(language === 'es' ? 'Pagar' : 'Pay')
     setButtonColor('#6366f1')
     setPaymentType('fixed')
+    setUsageType('single_use')
+    setMaxUses(1)
   }
 
   // Limpiar formulario cuando se sale del modo edición (preservando recipientAddress)
@@ -83,6 +87,8 @@ function PaymentButtonGenerator({
       setButtonText(language === 'es' ? 'Pagar' : 'Pay')
       setButtonColor('#6366f1')
       setPaymentType('fixed')
+      setUsageType('single_use')
+      setMaxUses(1)
       // Asegurar que recipientAddress se mantiene
       if (currentRecipient) {
         setRecipientAddress(currentRecipient)
@@ -115,6 +121,8 @@ function PaymentButtonGenerator({
       setButtonText(editingButton.buttonText || (language === 'es' ? 'Pagar' : 'Pay'))
       setButtonColor(editingButton.buttonColor || '#6366f1')
       setPaymentType(editingButton.paymentType || 'fixed')
+      setUsageType(editingButton.usageType || 'single_use')
+      setMaxUses(editingButton.maxUses || 1)
       
       // Cargar URLs de imágenes existentes (limpiar primero)
       setItemImageUrl(null)
@@ -388,7 +396,9 @@ function PaymentButtonGenerator({
         buttonText,
         buttonColor,
         tokenAddress,
-        paymentType
+        paymentType,
+        usageType,
+        maxUses: usageType === 'limited' ? parseInt(maxUses) || 1 : null
       }
 
       console.log('Button data to save:', {
@@ -683,6 +693,58 @@ function PaymentButtonGenerator({
             }
           </p>
         </div>
+
+        <div className="form-group">
+          <label htmlFor="usageType">{language === 'es' ? 'Tipo de Uso:' : 'Usage Type:'}</label>
+          <select
+            id="usageType"
+            value={usageType}
+            onChange={(e) => {
+              setUsageType(e.target.value)
+              if (e.target.value !== 'limited') {
+                setMaxUses(1)
+              }
+            }}
+            className="form-input"
+            required
+          >
+            <option value="single_use">{language === 'es' ? 'Uso Único (se desactiva después del primer pago)' : 'Single Use (disables after first payment)'}</option>
+            <option value="unlimited">{language === 'es' ? 'Ilimitado (válido para múltiples transacciones)' : 'Unlimited (valid for multiple transactions)'}</option>
+            <option value="limited">{language === 'es' ? 'Limitado (por inventario de producto)' : 'Limited (by product inventory)'}</option>
+          </select>
+          <p className="form-hint">
+            {usageType === 'single_use'
+              ? (language === 'es' ? 'El botón se desactivará automáticamente después del primer pago exitoso.' : 'The button will automatically disable after the first successful payment.')
+              : usageType === 'unlimited'
+                ? (language === 'es' ? 'El botón permanecerá activo para múltiples pagos sin límite.' : 'The button will remain active for multiple payments without limit.')
+                : (language === 'es' ? 'El botón se desactivará cuando se alcance el número máximo de usos especificado.' : 'The button will disable when the maximum number of uses is reached.')
+            }
+          </p>
+        </div>
+
+        {usageType === 'limited' && (
+          <div className="form-group">
+            <label htmlFor="maxUses">{language === 'es' ? 'Inventario Máximo (Número de Usos):' : 'Maximum Inventory (Number of Uses):'}</label>
+            <input
+              type="number"
+              id="maxUses"
+              value={maxUses}
+              onChange={(e) => {
+                const value = parseInt(e.target.value) || 1
+                setMaxUses(value > 0 ? value : 1)
+              }}
+              min="1"
+              className="form-input"
+              required={usageType === 'limited'}
+            />
+            <p className="form-hint">
+              {language === 'es' 
+                ? 'Número máximo de veces que se puede usar este botón antes de desactivarse automáticamente.'
+                : 'Maximum number of times this button can be used before automatically disabling.'
+              }
+            </p>
+          </div>
+        )}
 
         <div className="form-group">
           <label htmlFor="buttonColor">{language === 'es' ? 'Color del Botón:' : 'Button Color:'}</label>

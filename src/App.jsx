@@ -449,14 +449,14 @@ function App() {
       // Asegurar que las direcciones estén en minúsculas para consistencia
       const recipientLower = buttonData.recipientAddress.toLowerCase()
 
-      // owner_address siempre es recipient_address (el receptor es el dueño del botón)
-      // Si no hay wallet conectada, automáticamente usar recipient_address como owner
-      const ownerAddress = recipientLower // Siempre usar recipient como owner
+      // owner_address: Si hay wallet conectada, usar account. Si no, usar recipient_address
+      // Esto permite que el usuario que creó el botón pueda eliminarlo después
+      const ownerAddress = account ? account.toLowerCase() : recipientLower
 
       const insertData = {
         id: shortId,
         recipient_address: recipientLower,
-        owner_address: ownerAddress || recipientLower, // Fallback: siempre usar recipient si owner está vacío
+        owner_address: ownerAddress, // Usar account si está conectada, sino recipient
         amount: String(buttonData.amount), // Asegurar que sea string
         concept: buttonData.concept || '', // Mantener para compatibilidad
         item_name: buttonData.itemName || '',
@@ -488,6 +488,18 @@ function App() {
         } catch (e) {
           // Si hay error, no incluir payment_type
         }
+      }
+
+      // Incluir campos de uso
+      if (buttonData.usageType) {
+        insertData.usage_type = buttonData.usageType
+        insertData.max_uses = buttonData.maxUses || (buttonData.usageType === 'limited' ? 1 : null)
+        insertData.current_uses = 0 // Inicializar contador en 0
+      } else {
+        // Valores por defecto
+        insertData.usage_type = 'single_use'
+        insertData.max_uses = 1
+        insertData.current_uses = 0
       }
 
       // Guardar en Supabase (owner_address = recipient_address)
@@ -654,6 +666,10 @@ function App() {
               buttonColor,
               tokenAddress,
               paymentType: data.payment_type || 'fixed',
+              usageType: data.usage_type || 'single_use',
+              maxUses: data.max_uses || 1,
+              currentUses: data.current_uses || 0,
+              shortId: lastSegment, // Agregar shortId para verificación de uso
               paymentLink: window.location.href
             }
             setButtons([buttonData])
@@ -695,22 +711,25 @@ function App() {
         }
 
         const buttonId = Date.now()
-        const buttonData = {
-          id: buttonId,
-          recipientAddress,
-          amount,
-          concept, // Compatibilidad
-          itemName,
-          itemDescription,
-          itemImage,
-          itemImage2,
-          itemImage3,
-          buttonText,
-          buttonColor,
-          tokenAddress,
-          paymentType: urlParams.get('paymentType') || 'fixed',
-          paymentLink: window.location.href
-        }
+            const buttonData = {
+              id: buttonId,
+              recipientAddress,
+              amount,
+              concept, // Compatibilidad
+              itemName,
+              itemDescription,
+              itemImage,
+              itemImage2,
+              itemImage3,
+              buttonText,
+              buttonColor,
+              tokenAddress,
+              paymentType: urlParams.get('paymentType') || 'fixed',
+              usageType: urlParams.get('usageType') || 'single_use',
+              maxUses: parseInt(urlParams.get('maxUses')) || 1,
+              currentUses: parseInt(urlParams.get('currentUses')) || 0,
+              paymentLink: window.location.href
+            }
         setButtons([buttonData])
 
         // Cargar información del token si hay provider
@@ -867,6 +886,37 @@ function App() {
     try {
       setRemoveStatus({ id, status: 'deleting' })
 
+      // Validar que tenemos los datos necesarios
+      if (!shortId) {
+        console.error('No se proporcionó shortId para eliminar')
+        alert(language === 'es' 
+          ? 'Error: No se puede eliminar el botón sin un ID válido.' 
+          : 'Error: Cannot delete button without a valid ID.')
+        setRemoveStatus({ id, status: 'fail' })
+        setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+        return
+      }
+
+      if (!supabase) {
+        console.error('Supabase no está configurado')
+        alert(language === 'es' 
+          ? 'Error: Supabase no está configurado.' 
+          : 'Error: Supabase is not configured.')
+        setRemoveStatus({ id, status: 'fail' })
+        setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+        return
+      }
+
+      if (!account) {
+        console.error('No hay wallet conectada')
+        alert(language === 'es' 
+          ? 'Error: Debes conectar tu wallet para eliminar botones.' 
+          : 'Error: You must connect your wallet to delete buttons.')
+        setRemoveStatus({ id, status: 'fail' })
+        setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+        return
+      }
+
       if (shortId && supabase && account) {
         const ownerAddress = account.toLowerCase()
 
@@ -907,16 +957,81 @@ function App() {
           }
         }
 
+        // Primero, verificar que el botón existe y obtener su owner_address
+        const { data: buttonCheck, error: checkError } = await supabase
+          .from('payment_buttons')
+          .select('owner_address, recipient_address')
+          .eq('id', shortId)
+          .maybeSingle()
+
+        if (checkError) {
+          console.error('Error verificando botón:', checkError)
+          alert(language === 'es' 
+            ? `Error al verificar el botón: ${checkError.message || 'Error desconocido'}` 
+            : `Error checking button: ${checkError.message || 'Unknown error'}`)
+          setRemoveStatus({ id, status: 'fail' })
+          setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+          return
+        }
+
+        if (!buttonCheck) {
+          console.warn('Botón no encontrado:', { shortId })
+          alert(language === 'es' 
+            ? 'No se encontró el botón para eliminar. Puede que ya haya sido eliminado.' 
+            : 'Button not found to delete. It may have already been deleted.')
+          setRemoveStatus({ id, status: 'fail' })
+          setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+          return
+        }
+
+        // Verificar permisos: el usuario debe ser el owner O el recipient
+        const buttonOwner = buttonCheck.owner_address?.toLowerCase()
+        const buttonRecipient = buttonCheck.recipient_address?.toLowerCase()
+        const canDelete = buttonOwner === ownerAddress || buttonRecipient === ownerAddress
+
+        if (!canDelete) {
+          console.warn('Sin permisos para eliminar:', { 
+            shortId, 
+            ownerAddress, 
+            buttonOwner, 
+            buttonRecipient 
+          })
+          alert(language === 'es' 
+            ? 'No tienes permisos para eliminar este botón. Solo el creador puede eliminarlo.' 
+            : 'You do not have permission to delete this button. Only the creator can delete it.')
+          setRemoveStatus({ id, status: 'fail' })
+          setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+          return
+        }
+
         // Eliminar el botón de la base de datos (hard delete)
-        // Usar ilike para owner_address (case-insensitive) como en otras funciones
+        // Ya verificamos permisos arriba, así que solo necesitamos filtrar por id
+        console.log('Intentando eliminar registro con:', { 
+          shortId, 
+          ownerAddress, 
+          buttonOwner, 
+          buttonRecipient 
+        })
+
+        // Eliminar usando el filtro que sabemos que funciona (owner_address o recipient_address)
+        // Usar el que coincida con el usuario actual
+        const filterField = buttonOwner === ownerAddress ? 'owner_address' : 'recipient_address'
+        const filterValue = buttonOwner === ownerAddress ? buttonOwner : buttonRecipient
+
+        console.log('Usando filtro:', { filterField, filterValue, shortId })
+
         const { data: deletedData, error } = await supabase
           .from('payment_buttons')
           .delete()
           .eq('id', shortId)
-          .ilike('owner_address', ownerAddress) // Case-insensitive como en archiveButton
+          .ilike(filterField, filterValue)
           .select()
 
-        console.log('Resultado de eliminación:', { deletedData, error })
+        console.log('Resultado de eliminación completa:', { 
+          deletedData, 
+          error,
+          deletedCount: deletedData?.length || 0
+        })
 
         if (error) {
           console.error('Error eliminando botón:', error)
@@ -935,10 +1050,31 @@ function App() {
         }
 
         if (!deletedData || deletedData.length === 0) {
-          console.warn('No se encontró ningún botón para eliminar con los criterios:', { shortId, ownerAddress })
-          alert(language === 'es' 
-            ? 'No se encontró el botón para eliminar. Puede que ya haya sido eliminado o no tengas permisos.' 
-            : 'Button not found to delete. It may have already been deleted or you may not have permissions.')
+          console.warn('No se eliminó ningún registro. Posibles causas:', { 
+            shortId, 
+            ownerAddress, 
+            buttonOwner, 
+            buttonRecipient,
+            message: 'Puede que las políticas RLS estén bloqueando la eliminación o que el registro ya no exista'
+          })
+          
+          // Intentar una segunda verificación para ver si el botón aún existe
+          const { data: stillExists } = await supabase
+            .from('payment_buttons')
+            .select('id')
+            .eq('id', shortId)
+            .maybeSingle()
+          
+          if (stillExists) {
+            console.error('El botón aún existe después del intento de eliminación. Posible problema de permisos RLS.')
+            alert(language === 'es' 
+              ? 'No se pudo eliminar el botón. Puede ser un problema de permisos. Verifica las políticas RLS en Supabase.' 
+              : 'Could not delete button. This may be a permissions issue. Check RLS policies in Supabase.')
+          } else {
+            console.log('El botón ya no existe, puede que haya sido eliminado por otro proceso.')
+            // Continuar como si se hubiera eliminado exitosamente
+          }
+          
           setRemoveStatus({ id, status: 'fail' })
           setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
           return
@@ -946,9 +1082,22 @@ function App() {
 
         console.log('Botón eliminado exitosamente:', deletedData)
 
-        // Recargar historial
+        // Recargar historial después de eliminar
         const actualPageSize = typeof pageSize === 'number' ? pageSize : 3
+        
+        // Esperar un momento para que Supabase procese la eliminación
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        // Recargar el historial
+        console.log('Recargando historial después de eliminar...')
         await loadHistoryFromSupabase(currentPage, actualPageSize, historyTab === 'archived')
+        
+        // También recargar el otro tab por si acaso
+        if (historyTab === 'active') {
+          await loadHistoryFromSupabase(1, actualPageSize, true) // Recargar archivados
+        } else {
+          await loadHistoryFromSupabase(1, actualPageSize, false) // Recargar activos
+        }
 
         setRemoveStatus({ id, status: 'success' })
         setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
@@ -967,6 +1116,64 @@ function App() {
         : `Error deleting button: ${error.message || 'Unknown error'}`)
       setRemoveStatus({ id, status: 'fail' })
       setTimeout(() => setRemoveStatus({ id: null, status: null }), 2000)
+    }
+  }
+
+  // Registrar un pago exitoso y actualizar contadores
+  const registerPayment = async (shortId, payerAddress, amount, tokenAddress, txHash = null) => {
+    if (!supabase || !shortId) {
+      console.warn('No se puede registrar pago: falta supabase o shortId')
+      return
+    }
+
+    try {
+      // 1. Registrar la transacción en payment_transactions
+      if (txHash) {
+        const { error: txError } = await supabase
+          .from('payment_transactions')
+          .insert({
+            button_id: shortId,
+            payer_address: payerAddress.toLowerCase(),
+            amount: String(amount),
+            token_address: tokenAddress.toLowerCase(),
+            transaction_hash: txHash
+          })
+
+        if (txError) {
+          console.warn('Error registrando transacción:', txError)
+        }
+      }
+
+      // 2. Incrementar current_uses en payment_buttons
+      const { error: updateError } = await supabase.rpc('increment_button_uses', {
+        button_id: shortId
+      })
+
+      // Si la función RPC no existe, usar update directo
+      if (updateError && updateError.code === '42883') {
+        const { data: currentButton, error: fetchError } = await supabase
+          .from('payment_buttons')
+          .select('current_uses')
+          .eq('id', shortId)
+          .single()
+
+        if (!fetchError && currentButton) {
+          const { error: directUpdateError } = await supabase
+            .from('payment_buttons')
+            .update({ current_uses: (currentButton.current_uses || 0) + 1 })
+            .eq('id', shortId)
+
+          if (directUpdateError) {
+            console.error('Error actualizando current_uses:', directUpdateError)
+          }
+        }
+      } else if (updateError) {
+        console.error('Error incrementando uses:', updateError)
+      }
+
+      console.log('Pago registrado exitosamente:', { shortId, payerAddress })
+    } catch (error) {
+      console.error('Error en registerPayment:', error)
     }
   }
 
@@ -1141,6 +1348,9 @@ function App() {
         tokenAddress: item.token_address,
         paymentLink: `${window.location.origin}/${item.id}`,
         paymentType: item.payment_type || 'fixed', // 'fixed' o 'editable'
+        usageType: item.usage_type || 'single_use',
+        maxUses: item.max_uses || 1,
+        currentUses: item.current_uses || 0,
         createdAt: item.created_at,
         deletedAt: item.deleted_at
       }))
@@ -1204,6 +1414,11 @@ function App() {
             isCompact={true}
             language={language}
             paymentType={paymentButton.paymentType || 'fixed'}
+            usageType={paymentButton.usageType || 'single_use'}
+            maxUses={paymentButton.maxUses || 1}
+            currentUses={paymentButton.currentUses || 0}
+            shortId={paymentButton.shortId}
+            onPaymentSuccess={registerPayment}
           />
         </div>
 
@@ -1483,6 +1698,11 @@ function App() {
                         onConnectWallet={connectWallet}
                         language={language}
                         paymentType={button.paymentType}
+                        usageType={button.usageType || 'single_use'}
+                        maxUses={button.maxUses || 1}
+                        currentUses={button.currentUses || 0}
+                        shortId={button.shortId}
+                        onPaymentSuccess={registerPayment}
                       />
                       {historyTab === 'active' && (
                         <>

@@ -25,7 +25,12 @@ function PaymentButton({
   onConnectWallet,
   isCompact = false,
   language = 'es',
-  paymentType = 'fixed' // 'fixed' o 'editable'
+  paymentType = 'fixed', // 'fixed' o 'editable'
+  usageType = 'single_use', // 'single_use', 'unlimited', 'limited'
+  maxUses = 1,
+  currentUses = 0,
+  shortId = null,
+  onPaymentSuccess = null // Callback cuando el pago es exitoso
 }) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [status, setStatus] = useState('')
@@ -73,6 +78,16 @@ function PaymentButton({
   
   // Determinar si el monto puede ser editado
   const canEditAmount = paymentType === 'editable' || (paymentType === 'fixed' && isOwner)
+
+  // Verificar si el botón puede ser usado
+  const canUseButton = () => {
+    if (usageType === 'unlimited') return true
+    if (usageType === 'single_use') return currentUses === 0
+    if (usageType === 'limited') return currentUses < maxUses
+    return false
+  }
+
+  const isButtonUsable = canUseButton()
   
   // Actualizar monto editable cuando cambia el monto original
   useEffect(() => {
@@ -217,6 +232,18 @@ function PaymentButton({
       return
     }
 
+    // Verificar si el botón aún puede ser usado
+    if (!isButtonUsable) {
+      const message = usageType === 'single_use'
+        ? (language === 'es' ? 'Este botón ya fue usado y no puede ser usado nuevamente.' : 'This button has already been used and cannot be used again.')
+        : usageType === 'limited'
+          ? (language === 'es' ? `Este botón ha alcanzado su límite de usos (${currentUses}/${maxUses}).` : `This button has reached its usage limit (${currentUses}/${maxUses}).`)
+          : (language === 'es' ? 'Este botón no está disponible.' : 'This button is not available.')
+      setStatus(message)
+      setTimeout(() => setStatus(''), 5000)
+      return
+    }
+
     try {
       setIsProcessing(true)
       setStatus('')
@@ -270,6 +297,11 @@ function PaymentButton({
       
       // Esperar confirmación
       await tx.wait()
+      
+      // Registrar el pago exitoso
+      if (onPaymentSuccess && shortId) {
+        await onPaymentSuccess(shortId, account, paymentAmount, tokenAddress, transactionHash)
+      }
       
       // Actualizar balance después del pago
       if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000001010') {
@@ -615,14 +647,31 @@ function PaymentButton({
             </p>
           )}
 
+          {!isButtonUsable && (
+            <div className="button-disabled-message" style={{ 
+              padding: '1rem', 
+              marginBottom: '1rem', 
+              backgroundColor: '#fee2e2', 
+              color: '#991b1b', 
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}>
+              {usageType === 'single_use'
+                ? (language === 'es' ? '⚠️ Este botón ya fue usado y no puede ser usado nuevamente.' : '⚠️ This button has already been used and cannot be used again.')
+                : usageType === 'limited'
+                  ? (language === 'es' ? `⚠️ Este botón ha alcanzado su límite de usos (${currentUses}/${maxUses}).` : `⚠️ This button has reached its usage limit (${currentUses}/${maxUses}).`)
+                  : (language === 'es' ? '⚠️ Este botón no está disponible.' : '⚠️ This button is not available.')
+              }
+            </div>
+          )}
           <button
             onClick={handlePayment}
-            disabled={isProcessing || !account || (currentNetwork && !currentNetwork.isPolygon)}
+            disabled={isProcessing || !account || (currentNetwork && !currentNetwork.isPolygon) || !isButtonUsable}
             className={`payment-btn ${isCompact ? 'compact' : ''}`}
             style={{ 
               backgroundColor: buttonColor,
-              opacity: (!account || isProcessing || (currentNetwork && !currentNetwork.isPolygon)) ? 0.6 : 1,
-              cursor: (!account || isProcessing || (currentNetwork && !currentNetwork.isPolygon)) ? 'not-allowed' : 'pointer'
+              opacity: (!account || isProcessing || (currentNetwork && !currentNetwork.isPolygon) || !isButtonUsable) ? 0.6 : 1,
+              cursor: (!account || isProcessing || (currentNetwork && !currentNetwork.isPolygon) || !isButtonUsable) ? 'not-allowed' : 'pointer'
             }}
           >
             {isProcessing ? (language === 'es' ? 'Procesando...' : 'Processing...') : buttonText}
