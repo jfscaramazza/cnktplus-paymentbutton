@@ -1144,34 +1144,51 @@ function App() {
         }
       }
 
-      // 2. Incrementar current_uses en payment_buttons
-      const { error: updateError } = await supabase.rpc('increment_button_uses', {
-        button_id: shortId
-      })
+      // 2. Obtener el estado actual del botón
+      const { data: currentButton, error: fetchError } = await supabase
+        .from('payment_buttons')
+        .select('current_uses, usage_type, max_uses')
+        .eq('id', shortId)
+        .single()
 
-      // Si la función RPC no existe, usar update directo
-      if (updateError && updateError.code === '42883') {
-        const { data: currentButton, error: fetchError } = await supabase
+      if (fetchError) {
+        console.error('Error obteniendo estado del botón:', fetchError)
+        return
+      }
+
+      // 3. Incrementar current_uses en payment_buttons
+      const newCurrentUses = (currentButton.current_uses || 0) + 1
+      const { error: updateError } = await supabase
+        .from('payment_buttons')
+        .update({ current_uses: newCurrentUses })
+        .eq('id', shortId)
+
+      if (updateError) {
+        console.error('Error actualizando current_uses:', updateError)
+        return
+      }
+
+      console.log('Pago registrado exitosamente:', { shortId, payerAddress, newCurrentUses })
+
+      // 4. Si es un link compartido, recargar el botón para actualizar el estado
+      if (isPaymentLink && buttons.length > 0 && buttons[0].shortId === shortId) {
+        // Recargar el botón desde Supabase
+        const { data: updatedButton, error: reloadError } = await supabase
           .from('payment_buttons')
-          .select('current_uses')
+          .select('*')
           .eq('id', shortId)
           .single()
 
-        if (!fetchError && currentButton) {
-          const { error: directUpdateError } = await supabase
-            .from('payment_buttons')
-            .update({ current_uses: (currentButton.current_uses || 0) + 1 })
-            .eq('id', shortId)
-
-          if (directUpdateError) {
-            console.error('Error actualizando current_uses:', directUpdateError)
+        if (!reloadError && updatedButton) {
+          const updatedButtonData = {
+            ...buttons[0],
+            currentUses: updatedButton.current_uses || 0,
+            usageType: updatedButton.usage_type || 'single_use',
+            maxUses: updatedButton.max_uses || 1
           }
+          setButtons([updatedButtonData])
         }
-      } else if (updateError) {
-        console.error('Error incrementando uses:', updateError)
       }
-
-      console.log('Pago registrado exitosamente:', { shortId, payerAddress })
     } catch (error) {
       console.error('Error en registerPayment:', error)
     }

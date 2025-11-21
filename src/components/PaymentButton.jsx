@@ -43,6 +43,7 @@ function PaymentButton({
   const [isConnecting, setIsConnecting] = useState(false)
   const [isImageModalOpen, setIsImageModalOpen] = useState(false)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  const [localCurrentUses, setLocalCurrentUses] = useState(currentUses) // Estado local para actualizar inmediatamente
   
   // Función para formatear wallet (resumida)
   const formatWallet = (address) => {
@@ -79,11 +80,16 @@ function PaymentButton({
   // Determinar si el monto puede ser editado
   const canEditAmount = paymentType === 'editable' || (paymentType === 'fixed' && isOwner)
 
-  // Verificar si el botón puede ser usado
+  // Actualizar estado local cuando cambia currentUses desde props
+  useEffect(() => {
+    setLocalCurrentUses(currentUses)
+  }, [currentUses])
+
+  // Verificar si el botón puede ser usado (usar estado local)
   const canUseButton = () => {
     if (usageType === 'unlimited') return true
-    if (usageType === 'single_use') return currentUses === 0
-    if (usageType === 'limited') return currentUses < maxUses
+    if (usageType === 'single_use') return localCurrentUses === 0
+    if (usageType === 'limited') return localCurrentUses < maxUses
     return false
   }
 
@@ -232,12 +238,12 @@ function PaymentButton({
       return
     }
 
-    // Verificar si el botón aún puede ser usado
+    // Verificar si el botón aún puede ser usado (usar estado local actualizado)
     if (!isButtonUsable) {
       const message = usageType === 'single_use'
         ? (language === 'es' ? 'Este botón ya fue usado y no puede ser usado nuevamente.' : 'This button has already been used and cannot be used again.')
         : usageType === 'limited'
-          ? (language === 'es' ? `Este botón ha alcanzado su límite de usos (${currentUses}/${maxUses}).` : `This button has reached its usage limit (${currentUses}/${maxUses}).`)
+          ? (language === 'es' ? `Este botón ha alcanzado su límite de usos (${localCurrentUses}/${maxUses}).` : `This button has reached its usage limit (${localCurrentUses}/${maxUses}).`)
           : (language === 'es' ? 'Este botón no está disponible.' : 'This button is not available.')
       setStatus(message)
       setTimeout(() => setStatus(''), 5000)
@@ -298,7 +304,13 @@ function PaymentButton({
       // Esperar confirmación
       await tx.wait()
       
-      // Registrar el pago exitoso
+      // INMEDIATAMENTE actualizar el estado local para deshabilitar el botón
+      // Esto se hace ANTES de registrar en la BD para feedback inmediato
+      if (usageType === 'single_use' || usageType === 'limited') {
+        setLocalCurrentUses(prev => prev + 1)
+      }
+      
+      // Registrar el pago exitoso en la base de datos
       if (onPaymentSuccess && shortId) {
         await onPaymentSuccess(shortId, account, paymentAmount, tokenAddress, transactionHash)
       }
@@ -659,7 +671,7 @@ function PaymentButton({
               {usageType === 'single_use'
                 ? (language === 'es' ? '⚠️ Este botón ya fue usado y no puede ser usado nuevamente.' : '⚠️ This button has already been used and cannot be used again.')
                 : usageType === 'limited'
-                  ? (language === 'es' ? `⚠️ Este botón ha alcanzado su límite de usos (${currentUses}/${maxUses}).` : `⚠️ This button has reached its usage limit (${currentUses}/${maxUses}).`)
+                  ? (language === 'es' ? `⚠️ Este botón ha alcanzado su límite de usos (${localCurrentUses}/${maxUses}).` : `⚠️ This button has reached its usage limit (${localCurrentUses}/${maxUses}).`)
                   : (language === 'es' ? '⚠️ Este botón no está disponible.' : '⚠️ This button is not available.')
               }
             </div>
